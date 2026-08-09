@@ -2,9 +2,17 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { startScheduler } from "./lib/scheduler.server";
+import { runScheduledTick, startScheduler } from "./lib/scheduler.server";
 
-startScheduler();
+// Cloudflare Workers sets this; Node/Bun does not. setInterval-based
+// scheduling only works on a persistent process — on Workers, background
+// jobs run via the `scheduled` handler below (Cron Triggers) instead.
+const isCloudflareWorkers =
+  typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+
+if (!isCloudflareWorkers) {
+  startScheduler();
+}
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -53,5 +61,8 @@ export default {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
+  },
+  async scheduled(controller: { cron: string }) {
+    await runScheduledTick(controller.cron);
   },
 };

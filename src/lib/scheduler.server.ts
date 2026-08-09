@@ -1,14 +1,15 @@
-// Server-only: in-process scheduler for the background engine. Runs the
-// alert/coach/autopilot cycle, subscription expiry and payment settlement on
-// a timer for as long as this server process is alive.
+// Server-only: runs the alert/coach/autopilot cycle, subscription expiry and
+// payment settlement jobs.
 //
-// This works because the app currently runs as a persistent Node/Bun process
-// (`bun run dev`, or any long-running host). It does NOT work on Cloudflare
-// Workers or other request-scoped edge runtimes — isolates there aren't
-// guaranteed to keep running after a response is sent, so `setInterval`
-// silently stops firing. If this ever deploys to Workers, replace this file
-// with a Cloudflare Cron Trigger (wrangler.toml `[triggers] crons = [...]`)
-// that calls the /api/public/* routes on a schedule instead.
+// Two ways this fires, depending on where the server process runs:
+//   - `startScheduler()` — an in-process setInterval loop, for a persistent
+//     Node/Bun process (local dev). Cloudflare Workers isolates aren't
+//     guaranteed to keep running after a response is sent, so setInterval
+//     silently stops firing there — worse, calling it at module top level
+//     throws ("Disallowed operation called within global scope").
+//   - `runScheduledTick(cron)` — invoked from the Workers `scheduled` handler
+//     (see server.ts) via Cloudflare Cron Triggers (wrangler.jsonc
+//     `triggers.crons`), one job per registered cron pattern.
 import {
   runEvaluateAlertsJob,
   runExpireSubsJob,
@@ -33,67 +34,68 @@ async function runJob(name: string, fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+async function withAdmin(fn: (admin: never) => Promise<unknown>): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await fn(supabaseAdmin as never);
+}
+
+const tickEvaluateAlerts = () => runJob("evaluate-alerts", () => withAdmin(runEvaluateAlertsJob));
+const tickSettlePayments = () => runJob("settle-payments", () => withAdmin(runSettlePaymentsJob));
+const tickExpireSubs = () => runJob("expire-subs", () => withAdmin(runExpireSubsJob));
+const tickFastAlerts = () => runJob("evaluate-alerts-fast", () => withAdmin(runFastAlertsJob));
+const tickRetentionCleanup = () => runJob("retention-cleanup", () => withAdmin(runRetentionCleanupJob));
+
+/** Local dev only (persistent Node/Bun process) — see runScheduledTick for Workers. */
 export function startScheduler(): void {
   const g = globalThis as unknown as { __eliteFluxSchedulerStarted?: boolean };
   if (g.__eliteFluxSchedulerStarted) return;
   g.__eliteFluxSchedulerStarted = true;
 
-  const tickEvaluateAlerts = () =>
-    void runJob("evaluate-alerts", async () => {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await runEvaluateAlertsJob(supabaseAdmin as never);
-    });
-
-  const tickSettlePayments = () =>
-    void runJob("settle-payments", async () => {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await runSettlePaymentsJob(supabaseAdmin as never);
-    });
-
-  const tickExpireSubs = () =>
-    void runJob("expire-subs", async () => {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await runExpireSubsJob(supabaseAdmin as never);
-    });
-
-  const tickFastAlerts = () =>
-    void runJob("evaluate-alerts-fast", async () => {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await runFastAlertsJob(supabaseAdmin as never);
-    });
-
-  const tickRetentionCleanup = () =>
-    void runJob("retention-cleanup", async () => {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await runRetentionCleanupJob(supabaseAdmin as never);
-    });
-
   setTimeout(() => {
-    tickEvaluateAlerts();
+    void tickEvaluateAlerts();
     setInterval(tickEvaluateAlerts, EVALUATE_ALERTS_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS);
 
   setTimeout(() => {
-    tickFastAlerts();
+    void tickFastAlerts();
     setInterval(tickFastAlerts, FAST_ALERTS_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS + 20_000);
 
   setTimeout(() => {
-    tickSettlePayments();
+    void tickSettlePayments();
     setInterval(tickSettlePayments, SETTLE_PAYMENTS_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS + 5_000);
 
   setTimeout(() => {
-    tickExpireSubs();
+    void tickExpireSubs();
     setInterval(tickExpireSubs, EXPIRE_SUBS_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS + 10_000);
 
   setTimeout(() => {
-    tickRetentionCleanup();
+    void tickRetentionCleanup();
     setInterval(tickRetentionCleanup, RETENTION_CLEANUP_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS + 15_000);
 
   console.log(
     "[scheduler] started — evaluate-alerts every 5min, fast-lane alerts every 60s, settle-payments hourly, expire-subs every 12h, retention-cleanup daily",
   );
+}
+
+// Each pattern must exactly match an entry in wrangler.jsonc's `triggers.crons`.
+const CRON_JOBS: Record<string, () => Promise<void>> = {
+  "* * * * *": tickFastAlerts,
+  "*/5 * * * *": tickEvaluateAlerts,
+  "0 * * * *": tickSettlePayments,
+  "0 */12 * * *": tickExpireSubs,
+  "0 3 * * *": tickRetentionCleanup,
+};
+
+/** Cloudflare Workers `scheduled` handler entry point — see server.ts. */
+export async function runScheduledTick(cron: string): Promise<void> {
+  const job = CRON_JOBS[cron];
+  if (!job) {
+    console.error(`[scheduler] no job registered for cron pattern: ${cron}`);
+    return;
+  }
+  await job();
 }

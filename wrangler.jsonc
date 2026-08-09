@@ -1,0 +1,17 @@
+{
+  // Custom domains (elite-flux.com, www.elite-flux.com) are attached directly
+  // via the Cloudflare Workers Custom Domains API, not listed here — the
+  // token used for `wrangler deploy` only has Workers Scripts:Edit, not the
+  // zone-level Workers Routes:Edit that `routes` in this file would need.
+  "name": "eliteflux",
+  // Each pattern must exactly match a key in scheduler.server.ts's CRON_JOBS.
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "*/5 * * * *",
+      "0 * * * *",
+      "0 */12 * * *",
+      "0 3 * * *"
+    ]
+  }
+}
