@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_txid_unique ON public.payment_transactions(txid);

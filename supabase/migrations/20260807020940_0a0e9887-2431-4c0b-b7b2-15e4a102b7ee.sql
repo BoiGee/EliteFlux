@@ -1,0 +1,2 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS telegram_user_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_telegram_user_id_key ON public.profiles (telegram_user_id) WHERE telegram_user_id IS NOT NULL;

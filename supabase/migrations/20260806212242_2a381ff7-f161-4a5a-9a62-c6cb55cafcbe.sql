@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS readonly_keys_only boolean NOT NULL DEFAULT false;
