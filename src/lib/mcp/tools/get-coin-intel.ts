@@ -1,4 +1,4 @@
-import { defineTool } from "@lovable.dev/mcp-js";
+import { defineTool } from "../protocol";
 import { z } from "zod";
 import { getBrainSnapshotCached } from "@/lib/brain-server";
 import { callerTier, meetsTier, notAuthenticated, upgradeNotice } from "../tier";

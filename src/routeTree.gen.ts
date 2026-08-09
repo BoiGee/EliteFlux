@@ -32,7 +32,6 @@ import { Route as CoachThreadIdRouteImport } from './routes/coach/$threadId'
 import { Route as AuthTelegramRouteImport } from './routes/auth/telegram'
 import { Route as ApiCoachRouteImport } from './routes/api/coach'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
-import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as ApiPublicSettlePaymentsRouteImport } from './routes/api/public/settle-payments'
 import { Route as ApiPublicRetentionCleanupRouteImport } from './routes/api/public/retention-cleanup'
 import { Route as ApiPublicPaystackWebhookRouteImport } from './routes/api/public/paystack-webhook'
@@ -44,7 +43,6 @@ import { Route as ApiBrainV3RouteImport } from './routes/api/brain/v3'
 import { Route as ApiBrainSentimentRouteImport } from './routes/api/brain/sentiment'
 import { Route as ApiBrainOnchainRouteImport } from './routes/api/brain/onchain'
 import { Route as ApiBrainEliteFluxRouteImport } from './routes/api/brain/elite-flux'
-import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
 const WhyElitefluxRoute = WhyElitefluxRouteImport.update({
@@ -163,12 +161,6 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
-const Char91DotmcpChar93ListToolsRoute =
-  Char91DotmcpChar93ListToolsRouteImport.update({
-    id: '/.mcp/list-tools',
-    path: '/.mcp/list-tools',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicSettlePaymentsRoute = ApiPublicSettlePaymentsRouteImport.update({
   id: '/api/public/settle-payments',
   path: '/api/public/settle-payments',
@@ -226,12 +218,6 @@ const ApiBrainEliteFluxRoute = ApiBrainEliteFluxRouteImport.update({
   path: '/api/brain/elite-flux',
   getParentRoute: () => rootRouteImport,
 } as any)
-const Char91DotmcpChar93InvokeToolToolRoute =
-  Char91DotmcpChar93InvokeToolToolRouteImport.update({
-    id: '/.mcp/invoke-tool/$tool',
-    path: '/.mcp/invoke-tool/$tool',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   id: '/.lovable/oauth/consent',
   path: '/.lovable/oauth/consent',
@@ -257,14 +243,12 @@ export interface FileRoutesByFullPath {
   '/track-record': typeof TrackRecordRoute
   '/welcome': typeof WelcomeRoute
   '/why-eliteflux': typeof WhyElitefluxRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/coach': typeof ApiCoachRoute
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach/': typeof CoachIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -296,14 +280,12 @@ export interface FileRoutesByTo {
   '/track-record': typeof TrackRecordRoute
   '/welcome': typeof WelcomeRoute
   '/why-eliteflux': typeof WhyElitefluxRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/coach': typeof ApiCoachRoute
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach': typeof CoachIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -336,14 +318,12 @@ export interface FileRoutesById {
   '/track-record': typeof TrackRecordRoute
   '/welcome': typeof WelcomeRoute
   '/why-eliteflux': typeof WhyElitefluxRoute
-  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/coach': typeof ApiCoachRoute
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach/': typeof CoachIndexRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
-  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -377,14 +357,12 @@ export interface FileRouteTypes {
     | '/track-record'
     | '/welcome'
     | '/why-eliteflux'
-    | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/api/coach'
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach/'
     | '/.lovable/oauth/consent'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -416,14 +394,12 @@ export interface FileRouteTypes {
     | '/track-record'
     | '/welcome'
     | '/why-eliteflux'
-    | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/api/coach'
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach'
     | '/.lovable/oauth/consent'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -455,14 +431,12 @@ export interface FileRouteTypes {
     | '/track-record'
     | '/welcome'
     | '/why-eliteflux'
-    | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/api/coach'
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach/'
     | '/.lovable/oauth/consent'
-    | '/.mcp/invoke-tool/$tool'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -495,14 +469,12 @@ export interface RootRouteChildren {
   TrackRecordRoute: typeof TrackRecordRoute
   WelcomeRoute: typeof WelcomeRoute
   WhyElitefluxRoute: typeof WhyElitefluxRoute
-  Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiCoachRoute: typeof ApiCoachRoute
   AuthTelegramRoute: typeof AuthTelegramRoute
   CoachThreadIdRoute: typeof CoachThreadIdRoute
   CoachIndexRoute: typeof CoachIndexRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
-  Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ApiBrainEliteFluxRoute: typeof ApiBrainEliteFluxRoute
   ApiBrainOnchainRoute: typeof ApiBrainOnchainRoute
   ApiBrainSentimentRoute: typeof ApiBrainSentimentRoute
@@ -679,13 +651,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.mcp/list-tools': {
-      id: '/.mcp/list-tools'
-      path: '/.mcp/list-tools'
-      fullPath: '/.mcp/list-tools'
-      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/settle-payments': {
       id: '/api/public/settle-payments'
       path: '/api/public/settle-payments'
@@ -763,13 +728,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBrainEliteFluxRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.mcp/invoke-tool/$tool': {
-      id: '/.mcp/invoke-tool/$tool'
-      path: '/.mcp/invoke-tool/$tool'
-      fullPath: '/.mcp/invoke-tool/$tool'
-      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/.lovable/oauth/consent': {
       id: '/.lovable/oauth/consent'
       path: '/.lovable/oauth/consent'
@@ -799,7 +757,6 @@ const rootRouteChildren: RootRouteChildren = {
   TrackRecordRoute: TrackRecordRoute,
   WelcomeRoute: WelcomeRoute,
   WhyElitefluxRoute: WhyElitefluxRoute,
-  Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiCoachRoute: ApiCoachRoute,
@@ -807,7 +764,6 @@ const rootRouteChildren: RootRouteChildren = {
   CoachThreadIdRoute: CoachThreadIdRoute,
   CoachIndexRoute: CoachIndexRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
-  Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ApiBrainEliteFluxRoute: ApiBrainEliteFluxRoute,
   ApiBrainOnchainRoute: ApiBrainOnchainRoute,
   ApiBrainSentimentRoute: ApiBrainSentimentRoute,

@@ -1,4 +1,4 @@
-import type { ToolContext } from "@lovable.dev/mcp-js";
+import type { ToolContext } from "./protocol";
 import { supabaseForUser } from "./supabase";
 import { type Tier, meetsTier, TIER_DISPLAY_NAME } from "@/lib/tier-matrix";
 

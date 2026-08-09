@@ -1,4 +1,4 @@
-import { defineTool } from "@lovable.dev/mcp-js";
+import { defineTool } from "../protocol";
 import { supabaseForUser } from "../supabase";
 
 export default defineTool({
