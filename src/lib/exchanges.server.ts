@@ -21,6 +21,17 @@ export type OrderRequest = {
   /** For buys: quote notional. For sells: base quantity. */
   quoteUsd?: number;
   baseQty?: number;
+  /**
+   * Caller-supplied unique ID for this order — pass the same value on every
+   * retry of the same intended trade. Every venue here rejects a repeat of
+   * an ID it has already seen instead of placing a second order, so if a
+   * network timeout hits between the exchange filling an order and this
+   * process learning about it, a retry can't double-execute the trade.
+   * Alphanumeric only, no separators: OKX's clOrdId is the strictest of the
+   * three venues (32 chars, no hyphens), so the caller should already have
+   * stripped them before this reaches here.
+   */
+  clientOrderId: string;
 };
 
 export type OrderResult = {
@@ -28,7 +39,17 @@ export type OrderResult = {
   orderId?: string;
   raw?: unknown;
   error?: string;
+  /**
+   * The venue rejected this call specifically because clientOrderId was
+   * already used — meaning an earlier attempt (this one, or a retry of it)
+   * may have actually filled. Not confirmation either way: the caller
+   * should record this as unresolved, not as a fresh failure, and a human
+   * should check the venue's own order history for the real outcome.
+   */
+  isDuplicate?: boolean;
 };
+
+export const looksLikeDuplicate = (msg: string | undefined) => !!msg && /duplicate/i.test(msg);
 
 const HOSTS: Record<Venue, string> = {
   binance: "https://api.binance.com",
@@ -120,6 +141,7 @@ async function binanceOrder(c: Credentials, r: OrderRequest): Promise<OrderResul
     symbol: `${r.symbol}${r.stable}`,
     side: r.side.toUpperCase(),
     type: "MARKET",
+    newClientOrderId: r.clientOrderId,
     timestamp: Date.now().toString(),
     recvWindow: "10000",
   });
@@ -130,8 +152,13 @@ async function binanceOrder(c: Credentials, r: OrderRequest): Promise<OrderResul
     `${HOSTS.binance}/api/v3/order?${query}&signature=${hmacHex(c.apiSecret, query)}`,
     { method: "POST", headers: { "X-MBX-APIKEY": c.apiKey } },
   );
-  const json = (await res.json()) as { orderId?: number; msg?: string };
-  if (!res.ok) return { ok: false, error: json.msg ?? `order rejected (${res.status})`, raw: json };
+  const json = (await res.json()) as { orderId?: number; msg?: string; code?: number };
+  if (!res.ok) {
+    // Binance: -2010 "Duplicate order sent" is the documented code for a
+    // reused newClientOrderId, but match on message too in case that drifts.
+    const isDuplicate = json.code === -2010 || looksLikeDuplicate(json.msg);
+    return { ok: false, error: json.msg ?? `order rejected (${res.status})`, raw: json, isDuplicate };
+  }
   return { ok: true, orderId: String(json.orderId ?? ""), raw: json };
 }
 
@@ -145,6 +172,7 @@ async function bybitOrder(c: Credentials, r: OrderRequest): Promise<OrderResult>
     orderType: "Market",
     qty: String(r.side === "buy" ? (r.quoteUsd ?? 0) : (r.baseQty ?? 0)),
     marketUnit: r.side === "buy" ? "quoteCoin" : "baseCoin",
+    orderLinkId: r.clientOrderId,
   });
   const res = await fetch(`${HOSTS.bybit}/v5/order/create`, {
     method: "POST",
@@ -158,7 +186,9 @@ async function bybitOrder(c: Credentials, r: OrderRequest): Promise<OrderResult>
     body,
   });
   const json = (await res.json()) as { retCode?: number; retMsg?: string; result?: { orderId?: string } };
-  if (json.retCode !== 0) return { ok: false, error: json.retMsg ?? "order rejected", raw: json };
+  if (json.retCode !== 0) {
+    return { ok: false, error: json.retMsg ?? "order rejected", raw: json, isDuplicate: looksLikeDuplicate(json.retMsg) };
+  }
   return { ok: true, orderId: json.result?.orderId ?? "", raw: json };
 }
 
@@ -172,6 +202,7 @@ async function okxOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
     ordType: "market",
     sz: String(r.side === "buy" ? (r.quoteUsd ?? 0) : (r.baseQty ?? 0)),
     tgtCcy: r.side === "buy" ? "quote_ccy" : "base_ccy",
+    clOrdId: r.clientOrderId,
   });
   const res = await fetch(`${HOSTS.okx}${path}`, {
     method: "POST",
@@ -184,9 +215,12 @@ async function okxOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
     },
     body,
   });
-  const json = (await res.json()) as { code?: string; msg?: string; data?: { ordId?: string; sMsg?: string }[] };
+  const json = (await res.json()) as { code?: string; msg?: string; data?: { ordId?: string; sMsg?: string; sCode?: string }[] };
   if (json.code !== "0") {
-    return { ok: false, error: json.data?.[0]?.sMsg || json.msg || "order rejected", raw: json };
+    const sMsg = json.data?.[0]?.sMsg;
+    // OKX: sCode 51023 is "Order already exists" for a reused clOrdId.
+    const isDuplicate = json.data?.[0]?.sCode === "51023" || looksLikeDuplicate(sMsg) || looksLikeDuplicate(json.msg);
+    return { ok: false, error: sMsg || json.msg || "order rejected", raw: json, isDuplicate };
   }
   return { ok: true, orderId: json.data?.[0]?.ordId ?? "", raw: json };
 }

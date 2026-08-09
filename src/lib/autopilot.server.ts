@@ -100,6 +100,26 @@ export async function recordCandidate(
   settings: AutopilotSettings,
   portfolio: PortfolioView,
 ): Promise<RecordedAction> {
+  // proposeActions has no memory of what it already proposed last cycle —
+  // it's a pure function scored fresh from the current portfolio each run.
+  // Without this check, a symbol the user hasn't approved or rejected yet
+  // gets re-proposed every cycle, piling up redundant pending actions for
+  // the same symbol. hoursSinceLastTrade/todayUsage only look at *executed*
+  // trades, so they don't catch this — check pending state directly instead.
+  const { data: pending } = await db
+    .from("autopilot_actions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("symbol", c.symbol)
+    .in("state", ["proposed", "approved"])
+    .gt("expires_at", new Date().toISOString())
+    .limit(1)
+    .maybeSingle();
+  if (pending) {
+    const id = (pending as { id: string }).id;
+    return { id, state: "proposed" };
+  }
+
   const usage = await todayUsage(db, userId);
   const ago = await hoursSinceLastTrade(db, userId, c.symbol);
   const verdict = checkGuardrails(c, settings as Guardrails, portfolio, usage, ago, null);
@@ -231,6 +251,14 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
     return { ok: false, error: "No exchange connection with trade permission." };
   }
 
+  // Derived from this action's own row ID, so a retry of this exact action
+  // (e.g. this process crashing after the exchange fills the order but
+  // before the state update below lands, leaving the row in "proposed" for
+  // a later run to pick up again) sends the venue the same ID it already
+  // saw — every venue here rejects a repeat rather than placing a second
+  // order. Alphanumeric-only: OKX's clOrdId doesn't accept hyphens.
+  const clientOrderId = actionId.replace(/-/g, "");
+
   const order = await placeSpotOrder(
     {
       apiKey: open(conn.api_key_ciphertext),
@@ -242,10 +270,21 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
       side: a.kind === "buy" ? "buy" : "sell",
       symbol: a.symbol,
       stable: settings.stable_symbol,
+      clientOrderId,
       ...(a.kind === "buy" ? { quoteUsd: Number(notional.toFixed(2)) } : {}),
       ...(a.kind !== "buy" && price > 0 ? { baseQty: Number((notional / price).toFixed(6)) } : {}),
     },
   );
+
+  // A duplicate rejection means the venue already has an order under this
+  // ID from an earlier attempt — it may well have filled. That's a
+  // materially different situation from a fresh rejection, so it gets a
+  // distinct note rather than being folded into an ordinary "failed" with
+  // no trace of the ambiguity — a human needs to check the venue's own
+  // order history for what actually happened, not trust this row either way.
+  const orderResult = order.isDuplicate
+    ? { ...order, note: `${conn.venue} reports an order already exists under this ID — check ${conn.venue} order history directly; this may have already filled.` }
+    : order;
 
   await db
     .from("autopilot_actions")
@@ -254,15 +293,15 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
       notional_usd: notional,
       venue: conn.venue,
       paper: false,
-      order_result: (order.raw ?? { error: order.error }) as never,
+      order_result: (orderResult.raw ?? { error: orderResult.error, note: (orderResult as { note?: string }).note }) as never,
       executed_at: order.ok ? new Date().toISOString() : null,
     })
     .eq("id", actionId);
-  await audit(db, userId, order.ok ? "live_fill" : "execution_failed", order, actionId);
+  await audit(db, userId, order.ok ? "live_fill" : order.isDuplicate ? "execution_unresolved_duplicate" : "execution_failed", orderResult, actionId);
 
   return order.ok
     ? { ok: true, paper: false, notionalUsd: notional, orderId: order.orderId }
-    : { ok: false, error: order.error ?? "Order rejected." };
+    : { ok: false, error: order.isDuplicate ? (orderResult as { note?: string }).note! : (order.error ?? "Order rejected.") };
 }
 
 /**
