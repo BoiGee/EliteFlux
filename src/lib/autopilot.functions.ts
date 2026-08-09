@@ -7,7 +7,7 @@ export const getAutopilot = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { loadSettings } = await import("@/lib/autopilot.server");
     const settings = await loadSettings(context.supabase as never, context.userId);
-    const [actions, audit] = await Promise.all([
+    const [actions, audit, connections] = await Promise.all([
       context.supabase
         .from("autopilot_actions")
         .select("*")
@@ -18,8 +18,23 @@ export const getAutopilot = createServerFn({ method: "GET" })
         .select("id,event,detail,created_at")
         .order("created_at", { ascending: false })
         .limit(40),
+      context.supabase
+        .from("exchange_connections")
+        .select("permission,status"),
     ]);
-    return { settings, actions: actions.data ?? [], audit: audit.data ?? [] };
+    const conns = (connections.data ?? []) as { permission: string; status: string }[];
+    return {
+      settings,
+      actions: actions.data ?? [],
+      audit: audit.data ?? [],
+      // Autopilot can't do anything without a connection that's both
+      // trade-permission and actually connected (matches
+      // autopilot.server.ts's tradingConnection() gate exactly) — the page
+      // needs to tell these two "nothing works yet" cases apart:
+      // no connections at all vs. a connection that's read-only-locked.
+      hasAnyConnection: conns.length > 0,
+      hasTradeConnection: conns.some((c) => c.permission === "read_trade" && c.status === "connected"),
+    };
   });
 
 export const updateAutopilot = createServerFn({ method: "POST" })

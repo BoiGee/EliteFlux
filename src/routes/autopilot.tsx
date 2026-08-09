@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, Inbox, Lock, Power, ShieldAlert, Sliders, X } from "lucide-react";
+import { ArrowLeft, Check, Inbox, Lock, Power, ShieldAlert, Sliders, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -173,6 +173,23 @@ function AutopilotPage() {
             <Button size="sm" variant="outline" onClick={() => killM.mutate(false)}>
               Turn off
             </Button>
+          </div>
+        )}
+
+        {/* Paper mode simulates fills with no real exchange, so this doesn't
+            apply there — matches the same condition armAutopilot itself
+            checks server-side before allowing a live arm. */}
+        {!settings?.paper_mode && q.data && !q.data.hasTradeConnection && (
+          <div className="rounded-xl border border-primary/40 bg-primary/10 p-4 flex items-center gap-3">
+            <Wallet className="w-5 h-5 text-primary shrink-0" />
+            <p className="text-sm flex-1">
+              {q.data.hasAnyConnection
+                ? "None of your connected accounts have trading permission enabled — Autopilot can't place live trades yet."
+                : "Connect an exchange account with trading permission before Autopilot can do anything live."}
+            </p>
+            <Link to="/portfolio">
+              <Button size="sm">Connect an exchange</Button>
+            </Link>
           </div>
         )}
 
