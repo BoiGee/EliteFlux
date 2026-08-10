@@ -187,7 +187,12 @@ async function bybitOrder(c: Credentials, r: OrderRequest): Promise<OrderResult>
   });
   const json = (await res.json()) as { retCode?: number; retMsg?: string; result?: { orderId?: string } };
   if (json.retCode !== 0) {
-    return { ok: false, error: json.retMsg ?? "order rejected", raw: json, isDuplicate: looksLikeDuplicate(json.retMsg) };
+    // 110072 "OrderLinkedID is duplicate" (v5 unified create-order) and
+    // 30001 "order_link_id is repeated" — both documented Bybit duplicate-
+    // orderLinkId codes (confirmed against ccxt's error-code map); unlike
+    // Binance/OKX below, only a text-match fallback existed here before.
+    const isDuplicate = json.retCode === 110072 || json.retCode === 30001 || looksLikeDuplicate(json.retMsg);
+    return { ok: false, error: json.retMsg ?? "order rejected", raw: json, isDuplicate };
   }
   return { ok: true, orderId: json.result?.orderId ?? "", raw: json };
 }

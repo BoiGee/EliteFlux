@@ -606,6 +606,7 @@ export async function runRetentionCleanupJob(admin: Admin): Promise<RetentionCle
       ["signal_outcomes", () => purgeOlderThan(admin, "signal_outcomes", "resolved_at", 120)],
       ["volatility_history", () => purgeOlderThan(admin, "volatility_history", "captured_at", 45)],
       ["stablecoin_supply_history", () => purgeOlderThan(admin, "stablecoin_supply_history", "captured_at", 30)],
+      ["telegram_login_attempts", () => purgeOlderThan(admin, "telegram_login_attempts", "created_at", 1)],
     ];
 
     for (const [table, runCleanup] of cleanupJobs) {

@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { computeWhaleIntel, type HistoryMap, type WhaleIntel } from "./whale-intel";
+import { computeWhaleIntel, WHALE_METHODOLOGY, type HistoryMap, type WhaleIntel } from "./whale-intel";
 import { computeConfidence, layerAgreement, type ConfidenceResult } from "./model-calibration";
 import { computeSentimentIntel, type SentimentIntel } from "./sentiment-intel";
 import { runEliteBrain, type EliteBrainOutput } from "./elite-brain";
@@ -497,6 +497,7 @@ const EMPTY_WHALE: WhaleIntel = {
   topSignals: [],
   accumulating: 0,
   distributing: 0,
+  methodology: WHALE_METHODOLOGY,
 };
 
 const EMPTY_SENTIMENT: SentimentIntel = {
@@ -525,6 +526,7 @@ const EMPTY_SMART: SmartMoneyIntel = {
   confidenceScore: 25,
   dominantClass: "Mixed Flow / Uncertain",
   coordinationIndex: 0,
+  methodology: WHALE_METHODOLOGY,
 };
 const EMPTY_PRESSURE: PumpPressureIntel = {
   score: 0,

@@ -10,7 +10,32 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -289,6 +314,7 @@ export type Database = {
           max_trades_per_day: number
           min_conviction: number
           paper_mode: boolean
+          peak_portfolio_usd: number | null
           stable_symbol: string
           updated_at: string
           user_id: string
@@ -311,6 +337,7 @@ export type Database = {
           max_trades_per_day?: number
           min_conviction?: number
           paper_mode?: boolean
+          peak_portfolio_usd?: number | null
           stable_symbol?: string
           updated_at?: string
           user_id: string
@@ -333,6 +360,7 @@ export type Database = {
           max_trades_per_day?: number
           min_conviction?: number
           paper_mode?: boolean
+          peak_portfolio_usd?: number | null
           stable_symbol?: string
           updated_at?: string
           user_id?: string
@@ -412,6 +440,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      coach_memory: {
+        Row: {
+          created_at: string
+          fact: string
+          id: string
+          source_thread_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fact: string
+          id?: string
+          source_thread_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fact?: string
+          id?: string
+          source_thread_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       coach_messages: {
         Row: {
@@ -791,6 +843,7 @@ export type Database = {
           display_name: string | null
           email: string | null
           id: string
+          last_active_at: string | null
           onboarded_at: string | null
           readonly_keys_only: boolean
           risk_sensitivity: Database["public"]["Enums"]["risk_sensitivity"]
@@ -807,6 +860,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id: string
+          last_active_at?: string | null
           onboarded_at?: string | null
           readonly_keys_only?: boolean
           risk_sensitivity?: Database["public"]["Enums"]["risk_sensitivity"]
@@ -823,6 +877,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id?: string
+          last_active_at?: string | null
           onboarded_at?: string | null
           readonly_keys_only?: boolean
           risk_sensitivity?: Database["public"]["Enums"]["risk_sensitivity"]
@@ -954,6 +1009,27 @@ export type Database = {
           },
         ]
       }
+      stablecoin_supply_history: {
+        Row: {
+          captured_at: string
+          id: string
+          symbol: string
+          total_supply: number
+        }
+        Insert: {
+          captured_at?: string
+          id?: string
+          symbol: string
+          total_supply: number
+        }
+        Update: {
+          captured_at?: string
+          id?: string
+          symbol?: string
+          total_supply?: number
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean
@@ -961,11 +1037,11 @@ export type Database = {
           current_period_end: string | null
           current_period_start: string | null
           id: string
-          provider: string
           paystack_authorization_code: string | null
           paystack_customer_code: string | null
           paystack_email_token: string | null
           paystack_subscription_code: string | null
+          provider: string
           status: Database["public"]["Enums"]["subscription_status"]
           tier: Database["public"]["Enums"]["subscription_tier"]
           updated_at: string
@@ -977,11 +1053,11 @@ export type Database = {
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
-          provider?: string
           paystack_authorization_code?: string | null
           paystack_customer_code?: string | null
           paystack_email_token?: string | null
           paystack_subscription_code?: string | null
+          provider?: string
           status?: Database["public"]["Enums"]["subscription_status"]
           tier?: Database["public"]["Enums"]["subscription_tier"]
           updated_at?: string
@@ -993,11 +1069,11 @@ export type Database = {
           current_period_end?: string | null
           current_period_start?: string | null
           id?: string
-          provider?: string
           paystack_authorization_code?: string | null
           paystack_customer_code?: string | null
           paystack_email_token?: string | null
           paystack_subscription_code?: string | null
+          provider?: string
           status?: Database["public"]["Enums"]["subscription_status"]
           tier?: Database["public"]["Enums"]["subscription_tier"]
           updated_at?: string
@@ -1041,6 +1117,48 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_login_attempts: {
+        Row: {
+          created_at: string
+          payload_hash: string
+        }
+        Insert: {
+          created_at?: string
+          payload_hash: string
+        }
+        Update: {
+          created_at?: string
+          payload_hash?: string
+        }
+        Relationships: []
+      }
+      user_feedback: {
+        Row: {
+          created_at: string
+          id: string
+          rating: string
+          subject_id: string
+          subject_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rating: string
+          subject_id: string
+          subject_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rating?: string
+          subject_id?: string
+          subject_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1059,6 +1177,27 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      volatility_history: {
+        Row: {
+          captured_at: string
+          id: string
+          range_pct: number
+          symbol: string
+        }
+        Insert: {
+          captured_at?: string
+          id?: string
+          range_pct: number
+          symbol: string
+        }
+        Update: {
+          captured_at?: string
+          id?: string
+          range_pct?: number
+          symbol?: string
         }
         Relationships: []
       }
@@ -1339,6 +1478,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       action_kind: ["buy", "trim", "exit", "hold"],

@@ -109,7 +109,7 @@ async function sendWebhook(url: string | null, input: DeliveryInput): Promise<Ou
 async function sendEmail(target: DeliveryTarget, title: string, message: string): Promise<Outcome> {
   if (!target.email) return { status: "skipped", error: "No email on profile" };
   const { sendTransactionalEmail } = await import("./email.server");
-  const appUrl = process.env["APP_URL"] ?? "https://elitefluxx.lovable.app";
+  const appUrl = process.env["APP_URL"] ?? "https://elite-flux.com";
   const result = await sendTransactionalEmail({
     to: target.email,
     subject: `EliteFlux alert — ${title}`,

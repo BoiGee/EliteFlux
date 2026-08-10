@@ -98,19 +98,19 @@ export const FEATURES: FeatureDoc[] = [
     key: "whale",
     title: "Whale Activity",
     where: "Dashboard, Whale tab",
-    what: "Tracks large-player behaviour and labels the phase: accumulating, distributing or quiet.",
-    eli5: "It watches the big spenders. When they buy quietly, that matters.",
+    what: "Flags coordinated volume-and-price patterns consistent with large-player buying or selling, and labels the phase: accumulating, distributing or quiet. This reads exchange price/volume patterns, not wallet addresses — for direct on-chain wallet tracking see the separate On-Chain feature.",
+    eli5: "It watches for the market's footprints of big spenders moving — not the spenders themselves.",
     plan: "elite",
     keywords: ["whale", "big players", "accumulation", "distribution"],
   },
   {
     key: "smart-money",
-    title: "Smart Money & On-Chain",
-    where: "Dashboard, Smart Money and On-Chain tabs",
-    what: "Groups professional-looking activity into clusters and shows a Smart Money Confidence Index and a Market Conviction Score.",
-    eli5: "It checks whether the experienced money and the crowd agree. When they disagree, be careful.",
+    title: "Smart Money clustering",
+    where: "Dashboard, Smart Money tab",
+    what: "Groups coins showing similar whale-activity patterns into clusters and shows a Smart Money Confidence Index and a Market Conviction Score. Built on the same price/volume-pattern read as Whale Activity above, not a separate wallet-tracking data source.",
+    eli5: "It checks whether several coins are showing the same 'big money moving' pattern at once, and how confident that read is.",
     plan: "elite",
-    keywords: ["smart money", "onchain", "on-chain", "institutional", "conviction"],
+    keywords: ["smart money", "institutional", "conviction", "cluster"],
   },
   {
     key: "onchain-flow",
@@ -518,6 +518,54 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-08-10",
+    title: "EliteFlux now runs on Cloudflare",
+    detail:
+      "The whole platform moved to Cloudflare's global network, live at elite-flux.com. Faster loads worldwide, same account, same data — nothing you do changes.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Autopilot's drawdown safety limit is now real",
+    detail:
+      "The drawdown guardrail now genuinely tracks your portfolio's high-water mark and can halt new trades if you draw down past your own set limit — it's a live measurement now, not just a number you set.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Exit and trim orders reprice at the moment they execute",
+    detail:
+      "A sell order built from a price that was current when it was proposed, not when it actually executes minutes or hours later, could under- or over-sell. Sell-side sizing now always uses the price at execution time.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Position-size math now applies inside Autopilot, not just the dashboard suggestion",
+    detail:
+      "The same measured-hit-rate sizing shown in Recommendations now also tightens (or, on a measured negative edge, skips) Autopilot's own buy sizing automatically.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Confidence readings reflect real data freshness",
+    detail:
+      "Confidence now genuinely accounts for how old the underlying market read actually is, and clearly flags the (rare) moments a read is built on synthesized rather than real observed history.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Whale Activity and Smart Money relabeled honestly",
+    detail:
+      "Both are built on exchange price/volume patterns, not wallet-address tracking — the feature descriptions and Flux's own answers now say so plainly. Real on-chain wallet tracking is the separate On-Chain feature.",
+  },
+  {
+    date: "2026-08-10",
+    title: "Alerts page shows when a delivery actually failed",
+    detail:
+      "A new Delivery issues panel on /alerts surfaces failed or skipped email, Telegram and webhook sends, so a broken alert channel doesn't just go silently unnoticed.",
+  },
+  {
+    date: "2026-08-10",
+    title: "EVM wallet tracking is upfront about its coverage",
+    detail:
+      "Ethereum/EVM wallets now clearly note that only ETH, USDT and USDC are tracked there — Solana wallets already showed this kind of coverage note for unrecognized tokens.",
+  },
   {
     date: "2026-08-09",
     title: "Track wallets, not just exchanges",

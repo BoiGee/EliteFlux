@@ -3,7 +3,18 @@
 
 export type Chain = "evm" | "solana";
 export type WalletBalance = { symbol: string; amount: number };
-export type WalletBalanceResult = { balances: WalletBalance[]; unrecognizedTokenCount: number };
+export type WalletBalanceResult = {
+  balances: WalletBalance[];
+  unrecognizedTokenCount: number;
+  /**
+   * Set when this chain's balance read is structurally incomplete in a way
+   * unrecognizedTokenCount can't express (EVM: no generic "list every ERC-20
+   * balance" RPC method, so this scans a curated allowlist rather than
+   * enumerating everything the way Solana's getTokenAccountsByOwner does —
+   * a count of "0 unrecognized" would wrongly imply nothing else exists).
+   */
+  coverageNote: string | null;
+};
 
 const EVM_RPC = "https://eth.llamarpc.com";
 const SOL_RPC = "https://api.mainnet-beta.solana.com";
@@ -68,7 +79,11 @@ async function evmBalances(address: string): Promise<WalletBalanceResult> {
   // generic "list every ERC-20 balance" JSON-RPC method the way Solana's
   // getTokenAccountsByOwner works, so unlike solanaBalances below this can't
   // report a real unrecognized-token count, only what it already checked.
-  return { balances, unrecognizedTokenCount: 0 };
+  return {
+    balances,
+    unrecognizedTokenCount: 0,
+    coverageNote: "Only ETH, USDT and USDC are tracked on this chain — other ERC-20 tokens aren't included in your total.",
+  };
 }
 
 type TokenAccounts = {
@@ -115,7 +130,7 @@ async function solanaBalances(address: string): Promise<WalletBalanceResult> {
     if (existing) existing.amount += amount;
     else out.push({ symbol, amount });
   }
-  return { balances: out, unrecognizedTokenCount };
+  return { balances: out, unrecognizedTokenCount, coverageNote: null };
 }
 
 export async function fetchWalletBalances(chain: Chain, address: string): Promise<WalletBalanceResult> {

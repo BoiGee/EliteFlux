@@ -56,7 +56,7 @@ export const initializePayment = createServerFn({ method: "POST" })
 
     const { getOrCreatePlanCode, initializeTransaction } = await import("./paystack.server");
     const plan = await getOrCreatePlanCode(supabaseAdmin as never, data.tier, data.cycle);
-    const appUrl = process.env["APP_URL"] ?? "https://elitefluxx.lovable.app";
+    const appUrl = process.env["APP_URL"] ?? "https://elite-flux.com";
 
     const result = await initializeTransaction({
       email,

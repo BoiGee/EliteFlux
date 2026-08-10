@@ -38,7 +38,28 @@ export async function loadSettings(db: DB, userId: string): Promise<AutopilotSet
     disclosure_accepted_at: null,
     armed_at: null,
     disarmed_reason: null,
+    peak_portfolio_usd: null,
   } as AutopilotSettings;
+}
+
+/**
+ * Tracks each user's own portfolio high-water mark and returns the current
+ * drawdown from it. Previously the drawdown breaker was always fed `null`
+ * (no data ever computed it) so it could never trip; this is the real
+ * measurement.
+ */
+async function trackDrawdown(
+  db: DB,
+  userId: string,
+  peakPortfolioUsd: number | null,
+  currentTotalUsd: number,
+): Promise<number | null> {
+  if (currentTotalUsd <= 0) return peakPortfolioUsd ? 100 : null;
+  if (!peakPortfolioUsd || currentTotalUsd > peakPortfolioUsd) {
+    await db.from("autopilot_settings").update({ peak_portfolio_usd: currentTotalUsd } as never).eq("user_id", userId);
+    return 0;
+  }
+  return ((peakPortfolioUsd - currentTotalUsd) / peakPortfolioUsd) * 100;
 }
 
 /** Trades already executed today, used by the daily guardrails. */
@@ -122,7 +143,8 @@ export async function recordCandidate(
 
   const usage = await todayUsage(db, userId);
   const ago = await hoursSinceLastTrade(db, userId, c.symbol);
-  const verdict = checkGuardrails(c, settings as Guardrails, portfolio, usage, ago, null);
+  const drawdownPct = await trackDrawdown(db, userId, settings.peak_portfolio_usd, portfolio.totalUsd);
+  const verdict = checkGuardrails(c, settings as Guardrails, portfolio, usage, ago, drawdownPct);
 
   const state = verdict.passed ? "proposed" : "blocked";
   const { data, error } = await db
@@ -203,6 +225,24 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
   }
   if (a.kind === "hold") return { ok: false, error: "Nothing to execute." };
 
+  // Atomically claim this action before doing any real work: two concurrent
+  // calls (double-clicking "Approve", or a manual retry racing a scheduled
+  // run) both reading state="proposed" here would otherwise both re-check
+  // guardrails and both place an order — the exchange's clientOrderId dedup
+  // stops a literal second order, but without this claim the two DB writes
+  // at the end can still race and overwrite a genuinely-filled order's row
+  // with "failed". Only the caller whose UPDATE actually flips the row wins.
+  const claim = await db
+    .from("autopilot_actions")
+    .update({ state: "executing" } as never)
+    .eq("id", actionId)
+    .eq("user_id", userId)
+    .in("state", ["proposed", "approved"])
+    .select("id");
+  if (!claim.data?.length) {
+    return { ok: false, error: "This action is already being processed." };
+  }
+
   // Re-price the book and re-run every guardrail at execution time.
   const portfolio = await loadPortfolioView(db, userId);
   const usage = await todayUsage(db, userId);
@@ -216,7 +256,8 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
     referencePrice: Number(a.reference_price) || 0,
     rationale: a.rationale,
   };
-  const verdict = checkGuardrails(candidate, settings as Guardrails, portfolio, usage, ago, null);
+  const drawdownPct = await trackDrawdown(db, userId, settings.peak_portfolio_usd, portfolio.totalUsd);
+  const verdict = checkGuardrails(candidate, settings as Guardrails, portfolio, usage, ago, drawdownPct);
   if (!verdict.passed) {
     await db
       .from("autopilot_actions")
@@ -227,7 +268,22 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
   }
 
   const notional = verdict.cappedNotional;
-  const price = candidate.referencePrice || 0;
+  // For sells (trim/exit), baseQty = notional / price must use a price as of
+  // *now*, not candidate.referencePrice (stale — set when the action was
+  // proposed, up to 6h earlier per its expires_at window). notional is
+  // already recomputed above against the freshly-reloaded `portfolio`; using
+  // a stale price to convert that fresh USD amount to a base quantity can
+  // leave part of an "exit" unsold, or request more than is actually held.
+  // portfolio.positions is fresh (loaded at the top of this function), so
+  // usdValue/amount for the held position is today's price, not the
+  // proposal-time snapshot.
+  const heldPosition = portfolio.positions.find((p) => p.symbol.toUpperCase() === a.symbol.toUpperCase());
+  const price =
+    a.kind === "buy"
+      ? candidate.referencePrice || 0
+      : heldPosition && heldPosition.amount > 0
+        ? heldPosition.usdValue / heldPosition.amount
+        : candidate.referencePrice || 0;
 
   if (settings.paper_mode) {
     const result = { simulated: true, notionalUsd: notional, price, filledAt: new Date().toISOString() };
@@ -261,9 +317,9 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
 
   const order = await placeSpotOrder(
     {
-      apiKey: open(conn.api_key_ciphertext),
-      apiSecret: open(conn.api_secret_ciphertext),
-      passphrase: conn.passphrase_ciphertext ? open(conn.passphrase_ciphertext) : null,
+      apiKey: await open(conn.api_key_ciphertext),
+      apiSecret: await open(conn.api_secret_ciphertext),
+      passphrase: conn.passphrase_ciphertext ? await open(conn.passphrase_ciphertext) : null,
     },
     {
       venue: conn.venue,

@@ -19,10 +19,6 @@ export default defineTool({
     const payload: Record<string, unknown> = {
       generatedAt: new Date(generatedAt).toISOString(),
       plan: tier,
-      eliteFluxScore: brain.eliteFluxScore,
-      band: brain.band,
-      regime: brain.regime,
-      headline: brain.headline,
       confidence: { score: confidence.score, band: confidence.band, reasons: confidence.reasons },
       disclaimer: "Market intelligence only — not financial advice.",
     };
@@ -31,17 +27,25 @@ export default defineTool({
     if (meetsTier(tier, "pro")) {
       payload.insight = brain.insight;
       payload.sentiment = { score: sentiment.score, state: sentiment.state, trend: sentiment.trend };
-      payload.narrative = {
-        aggregateStrength: narrative.aggregateStrength,
-        topEmerging: narrative.topEmerging,
-      };
     } else {
       payload.locked_pro = upgradeNotice("pro", tier);
     }
 
-    // ELITE layers
+    // ELITE layers — eliteFluxScore/band/regime/headline match tier-matrix.ts's
+    // "elite-brain" key, narrative matches "narrative-detect": both Elite-only,
+    // not Operator. These used to sit unconditionally at the top of the
+    // payload / behind the PRO check — an Operator (or even free) caller got
+    // the full flux score and narrative read for free.
     if (meetsTier(tier, "elite")) {
-      payload.whale = { score: whale.score, phase: whale.phase, impact: whale.impact };
+      payload.eliteFluxScore = brain.eliteFluxScore;
+      payload.band = brain.band;
+      payload.regime = brain.regime;
+      payload.headline = brain.headline;
+      payload.narrative = {
+        aggregateStrength: narrative.aggregateStrength,
+        topEmerging: narrative.topEmerging,
+      };
+      payload.whale = { score: whale.score, phase: whale.phase, impact: whale.impact, methodology: whale.methodology };
       payload.cognition = {
         regime: brainV3.regime,
         confidence: brainV3.confidence,

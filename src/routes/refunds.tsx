@@ -9,12 +9,12 @@ export const Route = createFileRoute("/refunds")({
       { property: "og:title", content: "Refund Policy — EliteFlux" },
       { property: "og:description", content: "When EliteFlux subscription payments can be refunded, and how to request one." },
       { property: "og:type", content: "website" },
-      { property: "og:url", content: "https://elitefluxx.lovable.app/refunds" },
-      { property: "og:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { property: "og:url", content: "https://elite-flux.com/refunds" },
+      { property: "og:image", content: "https://elite-flux.com/og-banner.jpg" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { name: "twitter:image", content: "https://elite-flux.com/og-banner.jpg" },
     ],
-    links: [{ rel: "canonical", href: "https://elitefluxx.lovable.app/refunds" }],
+    links: [{ rel: "canonical", href: "https://elite-flux.com/refunds" }],
   }),
 
   component: () => (

@@ -38,9 +38,20 @@ export const telegramSignIn = createServerFn({ method: "POST" })
       attachTelegramProfile,
       mintSessionToken,
       telegramEmail,
+      markPayloadUsedOnce,
+      inviteCodeMatches,
     } = await import("./telegram-auth.server");
 
     const payload = verifyTelegramPayload(data.payload);
+
+    // A verified payload stays replayable for its whole freshness window
+    // (verifyTelegramPayload only checks it isn't *stale*, not that it
+    // hasn't been used before) — without this, one real Telegram login
+    // click could be resubmitted unlimited times, e.g. to brute-force an
+    // invite code below with no per-attempt friction.
+    if (!(await markPayloadUsedOnce(admin, payload.hash))) {
+      return { ok: false as const, message: "This Telegram login was already used. Please sign in again." };
+    }
 
     let userId = await findUserByTelegramId(admin, payload.id);
     if (!userId) {
@@ -49,7 +60,7 @@ export const telegramSignIn = createServerFn({ method: "POST" })
       const signup = await getSignupMode(admin as never);
       if (signup.mode === "invite") {
         const given = (data.inviteCode ?? "").trim();
-        const ok = given && signup.code && given.toLowerCase() === signup.code.trim().toLowerCase();
+        const ok = given && signup.code && inviteCodeMatches(given, signup.code);
         if (!ok) {
           return {
             ok: false as const,

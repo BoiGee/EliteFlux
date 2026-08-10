@@ -47,7 +47,7 @@ const PLAN_REFRESH_MS = 30 * 24 * 3600_000;
  * to a guessed/stale rate — this feeds directly into what a customer is
  * charged, so a failed lookup should block checkout, not silently mis-price it.
  */
-async function fetchUsdToGhsRate(): Promise<number> {
+export async function fetchUsdToGhsRate(): Promise<number> {
   const res = await fetch("https://open.er-api.com/v6/latest/USD");
   if (!res.ok) throw new Error(`Exchange rate lookup failed (${res.status})`);
   const json = (await res.json().catch(() => null)) as { result?: string; rates?: Record<string, number> } | null;

@@ -9,12 +9,12 @@ export const Route = createFileRoute("/terms")({
       { property: "og:title", content: "Terms of Service — EliteFlux" },
       { property: "og:description", content: "The terms that govern your use of EliteFlux, including subscriptions, risk disclosures and account rules." },
       { property: "og:type", content: "website" },
-      { property: "og:url", content: "https://elitefluxx.lovable.app/terms" },
-      { property: "og:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { property: "og:url", content: "https://elite-flux.com/terms" },
+      { property: "og:image", content: "https://elite-flux.com/og-banner.jpg" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { name: "twitter:image", content: "https://elite-flux.com/og-banner.jpg" },
     ],
-    links: [{ rel: "canonical", href: "https://elitefluxx.lovable.app/terms" }],
+    links: [{ rel: "canonical", href: "https://elite-flux.com/terms" }],
   }),
 
   component: () => (

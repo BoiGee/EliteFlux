@@ -41,7 +41,7 @@ const FNG = "https://api.alternative.me/fng/?limit=1";
 function marketFetch(url: string): Promise<Response> {
   return fetch(url, {
     headers: {
-      "User-Agent": "EliteFlux/1.0 (+https://elitefluxx.lovable.app)",
+      "User-Agent": "EliteFlux/1.0 (+https://elite-flux.com)",
       Accept: "application/json",
     },
   });
@@ -446,32 +446,63 @@ export async function getExtendedMarketData(snapshot: MarketSnapshot, tickers: R
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // Every one of these degrades to a neutral fallback on failure rather
+    // than aborting the cycle (unlike the core whale/sentiment chain below,
+    // these are additive layers, not foundational) — but that used to be
+    // completely silent (no console.error at all). If one provider breaks
+    // for weeks, every downstream consumer just sees a permanent neutral
+    // contribution with no operational signal anything died. `logged` names
+    // the failure so it at least shows up in logs/tail.
+    const logged = <T,>(label: string, p: Promise<T>, fallback: T): Promise<T> =>
+      p.catch((e) => {
+        console.error(`brain-server: ${label} failed, degrading to neutral fallback`, e);
+        return fallback;
+      });
+
     // Macro data (daily closes off Yahoo + CoinGecko) barely moves intra-day —
     // its own long-lived cache so it isn't re-fetched every 90s with everything else.
     const macroPromise = cached("macro-intel", { ttlMs: 3 * 3600_000, staleMs: 24 * 3600_000 }, () =>
-      getMacroIntel().catch(() => NEUTRAL_MACRO),
+      logged("getMacroIntel", getMacroIntel(), NEUTRAL_MACRO),
     );
 
     const [rawDerivatives, rawOrderBook, rawTrending, onchainReal, stablecoin, confluence, options, macro, okxPrices, volatility, communityTrust, crowd] =
       await Promise.all([
-        fetchDerivativesData(binanceSymbols).catch(() => null),
-        fetchOrderBookData(binanceSymbols).catch(() => new Map()),
-        fetchTrendingData().catch(() => null),
-        fetchOnChainFlows(ethPrice).catch(() => null),
-        getStablecoinSupplyIntel(supabaseAdmin as never).catch(
-          () => ({ perSymbol: {}, netLiquidityScore: 50, totalSupplyUsd: 0, generatedAt: Date.now() }) as StablecoinSupplyIntel,
+        logged("fetchDerivativesData", fetchDerivativesData(binanceSymbols), null),
+        logged("fetchOrderBookData", fetchOrderBookData(binanceSymbols), new Map()),
+        logged("fetchTrendingData", fetchTrendingData(), null),
+        logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
+        logged(
+          "getStablecoinSupplyIntel",
+          getStablecoinSupplyIntel(supabaseAdmin as never),
+          { perSymbol: {}, netLiquidityScore: 50, totalSupplyUsd: 0, generatedAt: Date.now() } as StablecoinSupplyIntel,
         ),
-        getConfluenceIntel(supabaseAdmin as never, snapshot).catch(
-          () => ({ perAsset: {}, marketAlignment: 0, generatedAt: Date.now() }) as ConfluenceIntel,
+        logged(
+          "getConfluenceIntel",
+          getConfluenceIntel(supabaseAdmin as never, snapshot),
+          { perAsset: {}, marketAlignment: 0, generatedAt: Date.now() } as ConfluenceIntel,
         ),
-        getOptionsIntel(supabaseAdmin as never).catch(() => ({ perCurrency: {}, generatedAt: Date.now() }) as OptionsIntel),
+        logged(
+          "getOptionsIntel",
+          getOptionsIntel(supabaseAdmin as never),
+          { perCurrency: {}, generatedAt: Date.now() } as OptionsIntel,
+        ),
         macroPromise,
-        fetchOkxPrices().catch(() => null),
-        getVolatilityIntel(supabaseAdmin as never, tickers, COIN_UNIVERSE).catch(
-          () => ({ perAsset: {}, generatedAt: Date.now() }) as VolatilityIntel,
+        logged("fetchOkxPrices", fetchOkxPrices(), null),
+        logged(
+          "getVolatilityIntel",
+          getVolatilityIntel(supabaseAdmin as never, tickers, COIN_UNIVERSE),
+          { perAsset: {}, generatedAt: Date.now() } as VolatilityIntel,
         ),
-        getCommunityTrustIntel(supabaseAdmin as never).catch(() => ({ perAsset: {}, generatedAt: Date.now() }) as CommunityTrustIntel),
-        loadCrowdIntel(supabaseAdmin as never).catch(() => ({ perAsset: {}, sampleSize: 0, generatedAt: Date.now() }) as CrowdIntel),
+        logged(
+          "getCommunityTrustIntel",
+          getCommunityTrustIntel(supabaseAdmin as never),
+          { perAsset: {}, generatedAt: Date.now() } as CommunityTrustIntel,
+        ),
+        logged(
+          "loadCrowdIntel",
+          loadCrowdIntel(supabaseAdmin as never),
+          { perAsset: {}, sampleSize: 0, generatedAt: Date.now() } as CrowdIntel,
+        ),
       ]);
 
     return {
@@ -502,7 +533,7 @@ export async function getBrainSnapshotCached(): Promise<BrainServerResult> {
 }
 
 export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
-  const { tickers, global, fng, tickerSource } = await getUpstreamMarketData();
+  const { tickers, global, fng, tickerSource, fetchedAt: tickersFetchedAt } = await getUpstreamMarketData();
   const snapshot = deriveSnapshot(tickers, global, global, fng);
 
 
@@ -626,7 +657,14 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
   const historyDepth = Math.max(0, Math.min(1, avgSamples / 24));
 
   const confidence = computeConfidence({
-    dataAgeMs: 0,
+    // getUpstreamMarketData is itself TTL-cached (cached() in
+    // ttl-cache.server.ts) and returns the *original* fetch's value object
+    // verbatim on a cache hit, so fetchedAt reflects when the underlying
+    // ticker data was actually pulled — not "now". This was previously
+    // hardcoded to 0, permanently maxing out the freshness term regardless
+    // of real staleness (including during a provider outage being served
+    // from the stale-while-revalidate window).
+    dataAgeMs: Math.max(0, Date.now() - tickersFetchedAt),
     degradedSource: tickerSource === "stored" || tickerSource === "fallback",
     layerAgreement: layerAgreement([
       brain.eliteFluxScore,
@@ -637,6 +675,7 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
       100 - pressure.score,
     ]),
     historyDepth: historySource === "persisted" ? historyDepth : Math.min(historyDepth, 0.35),
+    syntheticHistory: historySource !== "persisted",
   });
 
   return {

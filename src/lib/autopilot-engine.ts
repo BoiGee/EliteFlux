@@ -76,7 +76,11 @@ export function proposeActions(
       out.push({
         kind: exiting ? "exit" : "trim",
         symbol: sym,
-        conviction: Math.round(Math.max(100 - o.score, exitPressureScore)),
+        // calibratedScore (recommendation-engine.ts), not the raw score —
+        // this conviction number is what min_conviction/Kelly-sizing act on,
+        // so it should reflect the score's measured real-world hit rate,
+        // not the raw enthusiasm of one cycle's read.
+        conviction: Math.round(Math.max(100 - o.calibratedScore, exitPressureScore)),
         notionalUsd: pos.usdValue * fraction,
         sizePct: fraction * 100,
         referencePrice: o.price,
@@ -96,7 +100,7 @@ export function proposeActions(
       out.push({
         kind: "buy",
         symbol: sym,
-        conviction: Math.round(o.score),
+        conviction: Math.round(o.calibratedScore),
         notionalUsd: (portfolio.totalUsd * targetPct) / 100,
         sizePct: targetPct,
         referencePrice: o.price,

@@ -26,17 +26,20 @@ const portfolio: PortfolioView = {
   ],
 };
 
-const opp = (over: Partial<EliteOpportunity>): EliteOpportunity =>
-  ({
+const opp = (over: Partial<EliteOpportunity>): EliteOpportunity => {
+  const score = over.score ?? 88;
+  return {
     symbol: "BTC",
     price: 64000,
-    score: 88,
+    score,
+    calibratedScore: score,
     band: "High Conviction",
     stance: "Accumulation Phase",
     reasonTags: ["whales accumulating"],
     isHighRisk: false,
     ...over,
-  }) as EliteOpportunity;
+  } as EliteOpportunity;
+};
 
 const candidate = (over: Partial<Candidate>): Candidate => ({
   kind: "buy",

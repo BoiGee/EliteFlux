@@ -2,14 +2,15 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Bell, BellOff, Play, Plus, Trash2, CheckCheck } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Bell, BellOff, Play, Plus, Trash2, CheckCheck } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { CHANNELS_BY_TIER, type AlertChannel } from "@/lib/tier-matrix";
+import { CHANNELS_BY_TIER, CHANNEL_LABEL, type AlertChannel } from "@/lib/tier-matrix";
 import {
   createAlert,
   deleteAlert,
   listAlertHistory,
   listAlerts,
+  listDeliveries,
   markAlertsRead,
   runMyAlertsNow,
   toggleAlert,
@@ -59,6 +60,7 @@ function AlertsPage() {
 
   const fetchAlerts = useServerFn(listAlerts);
   const fetchHistory = useServerFn(listAlertHistory);
+  const fetchDeliveries = useServerFn(listDeliveries);
   const create = useServerFn(createAlert);
   const toggle = useServerFn(toggleAlert);
   const remove = useServerFn(deleteAlert);
@@ -71,6 +73,15 @@ function AlertsPage() {
     queryFn: () => fetchHistory(),
     enabled: !!user,
     refetchInterval: 30_000,
+  });
+  // Non-in-app deliveries (email/Telegram/webhook) fail silently server-side
+  // otherwise — nothing else in the UI tells a user their webhook or
+  // Telegram alert isn't actually reaching them.
+  const deliveriesQ = useQuery({
+    queryKey: ["alert-deliveries"],
+    queryFn: () => fetchDeliveries(),
+    enabled: !!user,
+    refetchInterval: 60_000,
   });
 
   const [name, setName] = useState("");
@@ -119,6 +130,8 @@ function AlertsPage() {
   const alerts = alertsQ.data ?? [];
   const history = historyQ.data ?? [];
   const unread = history.filter((h) => !h.read).length;
+  const deliveries = deliveriesQ.data ?? [];
+  const troubledDeliveries = deliveries.filter((d) => d.channel !== "in_app" && d.status !== "sent").slice(0, 5);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -284,6 +297,27 @@ function AlertsPage() {
                 ))}
               </ul>
             </div>
+
+            {troubledDeliveries.length > 0 && (
+              <div className="glass-panel rounded-xl p-5 border border-bear/30">
+                <h2 className="text-sm font-bold mb-3 flex items-center gap-2 text-bear">
+                  <AlertTriangle className="w-4 h-4" /> Delivery issues
+                </h2>
+                <ul className="space-y-2">
+                  {troubledDeliveries.map((d) => (
+                    <li key={d.id} className="px-3 py-2 rounded-lg bg-bear/5 border border-bear/20 text-xs">
+                      <p className="font-semibold">
+                        {CHANNEL_LABEL[d.channel as AlertChannel]} · {d.status}
+                      </p>
+                      {d.error && <p className="text-muted-foreground mt-0.5">{d.error}</p>}
+                      <p className="text-[10px] text-muted-foreground/70 mt-1">
+                        {new Date(d.created_at).toLocaleString()}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
 
           {/* History */}

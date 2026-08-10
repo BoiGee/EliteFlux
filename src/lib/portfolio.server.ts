@@ -99,9 +99,9 @@ export async function syncPortfolio(db: DB, userId: string): Promise<SyncReport>
     const label = c.label || c.venue;
     try {
       const balances = await fetchBalances(c.venue, {
-        apiKey: open(c.api_key_ciphertext),
-        apiSecret: open(c.api_secret_ciphertext),
-        passphrase: c.passphrase_ciphertext ? open(c.passphrase_ciphertext) : null,
+        apiKey: await open(c.api_key_ciphertext),
+        apiSecret: await open(c.api_secret_ciphertext),
+        passphrase: c.passphrase_ciphertext ? await open(c.passphrase_ciphertext) : null,
       });
       for (const b of balances) {
         raw.push({ source: "exchange", id: c.id, label, symbol: b.symbol, amount: b.amount });
@@ -125,17 +125,17 @@ export async function syncPortfolio(db: DB, userId: string): Promise<SyncReport>
   for (const w of (wallets ?? []) as { id: string; chain: Chain; address: string; label: string | null }[]) {
     const label = w.label || `${w.chain}:${w.address.slice(0, 6)}…${w.address.slice(-4)}`;
     try {
-      const { balances, unrecognizedTokenCount } = await fetchWalletBalances(w.chain, w.address);
+      const { balances, unrecognizedTokenCount, coverageNote } = await fetchWalletBalances(w.chain, w.address);
       for (const b of balances) {
         raw.push({ source: "wallet", id: w.id, label, symbol: b.symbol, amount: b.amount });
       }
       // Not an error — status stays "connected" — but this note is worth
       // surfacing durably (not just in the one-time sync toast) so a user
-      // knows their tracked total is understated, and by roughly how much.
+      // knows their tracked total may be understated, and why.
       const note =
         unrecognizedTokenCount > 0
           ? `+${unrecognizedTokenCount} other token${unrecognizedTokenCount === 1 ? "" : "s"} held but not tracked`
-          : null;
+          : coverageNote;
       await db
         .from("wallet_addresses")
         .update({ status: "connected", last_error: note, last_synced_at: new Date().toISOString() })

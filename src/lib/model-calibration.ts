@@ -107,6 +107,16 @@ export interface ConfidenceInputs {
   layerAgreement: number;
   /** Depth of observed history backing the read, 0..1. */
   historyDepth: number;
+  /**
+   * True when the history behind this read was synthesized (interpolated
+   * from today's price move) rather than real observed samples — a cold
+   * start or a history-store outage. Distinct from a merely-thin
+   * historyDepth: synthesized history isn't "not much data yet", it's
+   * fabricated data shaped to look like a real trend, which deserves an
+   * explicit, honest reason rather than blending into the generic
+   * "limited observed history" wording.
+   */
+  syntheticHistory?: boolean;
 }
 
 export interface ConfidenceResult {
@@ -122,7 +132,8 @@ export function computeConfidence(i: ConfidenceInputs): ConfidenceResult {
   if (freshness < 0.5) reasons.push("market read is not fresh");
   if (i.degradedSource) reasons.push("running on a backup data source");
   if (i.layerAgreement < 0.5) reasons.push("intelligence layers disagree");
-  if (i.historyDepth < 0.5) reasons.push("limited observed history");
+  if (i.syntheticHistory) reasons.push("history is synthesized from today's price move, not real observed data");
+  else if (i.historyDepth < 0.5) reasons.push("limited observed history");
 
   let score = 100 * (freshness * 0.3 + clamp(i.layerAgreement, 0, 1) * 0.4 + clamp(i.historyDepth, 0, 1) * 0.3);
   if (i.degradedSource) score *= 0.8;

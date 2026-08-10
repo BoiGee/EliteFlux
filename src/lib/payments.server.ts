@@ -66,12 +66,20 @@ export interface SettleResult {
 export async function settlePayment(admin: Admin, paymentId: string): Promise<SettleResult> {
   const { data: row } = await admin
     .from("payment_transactions")
-    .select("id,user_id,provider_ref,tier,cycle,status")
+    .select("id,user_id,provider_ref,tier,cycle,status,expected_amount")
     .eq("id", paymentId)
     .maybeSingle();
 
   const tx = row as
-    | { id: string; user_id: string; provider_ref: string | null; tier: Tier; cycle: Cycle; status: string }
+    | {
+        id: string;
+        user_id: string;
+        provider_ref: string | null;
+        tier: Tier;
+        cycle: Cycle;
+        status: string;
+        expected_amount: number | null;
+      }
     | null;
 
   if (!tx) return { ok: false, status: "error", message: "Payment not found." };
@@ -91,6 +99,34 @@ export async function settlePayment(admin: Admin, paymentId: string): Promise<Se
       status: failed ? "rejected" : "pending",
       message: `Payment ${result.status ?? "not yet confirmed"}.`,
     };
+  }
+
+  // Sanity-check the charged amount before granting anything. result.amountUsd
+  // (misleadingly named — Paystack checkout is GHS, see paystack.config.ts)
+  // is compared against expected_amount (the tier's USD list price) converted
+  // through the same live FX rate used at checkout time. This can't be an
+  // exact match (rates drift between charge and verify), so the tolerance is
+  // wide — it exists to catch a gross repricing bug charging the wrong tier's
+  // price while still granting full access, not to police normal FX noise.
+  if (tx.expected_amount) {
+    try {
+      const { fetchUsdToGhsRate } = await import("./paystack.server");
+      const rate = await fetchUsdToGhsRate();
+      const expectedGhs = tx.expected_amount * rate;
+      const chargedGhs = result.amountUsd ?? 0;
+      const ratio = expectedGhs > 0 ? chargedGhs / expectedGhs : 0;
+      if (ratio < 0.4 || ratio > 2.5) {
+        console.error(
+          `settlePayment: amount mismatch for ${tx.id} — expected ~${expectedGhs.toFixed(2)} GHS ` +
+            `(${tx.expected_amount} USD @ ${rate}), Paystack reports ${chargedGhs.toFixed(2)} GHS. Refusing to grant.`,
+        );
+        return { ok: false, status: "error", message: "This payment could not be verified. Contact support." };
+      }
+    } catch (e) {
+      // FX lookup failing shouldn't block a real payment forever — log and
+      // proceed without the sanity check rather than getting a paying user stuck.
+      console.error(`settlePayment: amount sanity check skipped for ${tx.id} (FX lookup failed)`, e);
+    }
   }
 
   const { data: claimed } = await admin

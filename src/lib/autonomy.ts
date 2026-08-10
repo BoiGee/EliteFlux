@@ -60,6 +60,8 @@ export type AutopilotSettings = Guardrails & {
   disclosure_accepted_at: string | null;
   armed_at: string | null;
   disarmed_reason: string | null;
+  /** Portfolio high-water mark, in USD — the baseline the drawdown breaker measures from. Null until the first run establishes one. */
+  peak_portfolio_usd: number | null;
 };
 
 export const DEFAULT_SETTINGS: Guardrails & {
@@ -101,6 +103,7 @@ export type ActionState =
   | "proposed"
   | "approved"
   | "rejected"
+  | "executing"
   | "executed"
   | "failed"
   | "expired"

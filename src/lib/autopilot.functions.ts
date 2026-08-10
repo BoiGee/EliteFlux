@@ -41,6 +41,15 @@ export const updateAutopilot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => settingsSchema.parse(input))
   .handler(async ({ data, context }) => {
+    // Autopilot level is Elite-only — see tier-matrix.ts's "autopilot" key.
+    // Adjusting guardrails below that level needs no gate (they're inert
+    // until armed), but the escalation itself must be checked server-side,
+    // not just have its button disabled client-side.
+    if (data.level === "autopilot") {
+      const { assertTier } = await import("@/lib/tier-lookup.server");
+      await assertTier(context.supabase as never, context.userId, "autopilot");
+    }
+
     const { loadSettings, audit } = await import("@/lib/autopilot.server");
     const current = await loadSettings(context.supabase as never, context.userId);
 
@@ -65,6 +74,9 @@ export const armAutopilot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => armSchema.parse(input))
   .handler(async ({ data, context }) => {
+    const { assertTier } = await import("@/lib/tier-lookup.server");
+    await assertTier(context.supabase as never, context.userId, "autopilot");
+
     const { ARM_PHRASE } = await import("@/lib/autonomy");
     const { loadSettings, audit } = await import("@/lib/autopilot.server");
     if (data.phrase.trim().toUpperCase() !== ARM_PHRASE) {

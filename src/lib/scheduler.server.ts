@@ -82,7 +82,9 @@ export function startScheduler(): void {
 }
 
 // Each pattern must exactly match an entry in wrangler.jsonc's `triggers.crons`.
-const CRON_JOBS: Record<string, () => Promise<void>> = {
+// Exported (not just used internally) so a test can assert this stays in
+// sync with wrangler.jsonc's triggers.crons — see __tests__/scheduler.test.ts.
+export const CRON_JOBS: Record<string, () => Promise<void>> = {
   "* * * * *": tickFastAlerts,
   "*/5 * * * *": tickEvaluateAlerts,
   "0 * * * *": tickSettlePayments,

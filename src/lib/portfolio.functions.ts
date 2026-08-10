@@ -38,6 +38,22 @@ export const connectExchange = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => connectExchangeSchema.parse(input))
   .handler(async ({ data, context }) => {
+    const { assertTier } = await import("@/lib/tier-lookup.server");
+    await assertTier(context.supabase as never, context.userId, "portfolio");
+
+    const { supabaseAdmin: rateLimitAdmin } = await import("@/integrations/supabase/client.server");
+    const { checkRateLimit } = await import("@/lib/rate-limit.server");
+    // Tighter than wallet_add: this handler round-trips real credentials to a
+    // real exchange and returns a distinctly-worded error per failure class
+    // (bad key / wrong permission / IP-locked / rate-limited) — unthrottled,
+    // that's a free oracle for testing stolen exchange keys.
+    const throttle = await checkRateLimit(rateLimitAdmin as never, context.userId, "exchange_connect", 5, 10 * 60_000);
+    if (!throttle.allowed) {
+      throw new Error(
+        `Too many connection attempts. Please wait ${Math.ceil(throttle.retryAfterSeconds / 60)} minute(s) and try again.`,
+      );
+    }
+
     // Personal safety switch: if the user has locked their account to read-only,
     // a trading-capable key cannot be added at all.
     const { data: prof } = await context.supabase
@@ -74,16 +90,16 @@ export const connectExchange = createServerFn({ method: "POST" })
         venue: data.venue,
         label: data.label ?? null,
         permission: data.permission,
-        api_key_ciphertext: seal(data.apiKey),
-        api_secret_ciphertext: seal(data.apiSecret),
-        passphrase_ciphertext: data.passphrase ? seal(data.passphrase) : null,
+        api_key_ciphertext: await seal(data.apiKey),
+        api_secret_ciphertext: await seal(data.apiSecret),
+        passphrase_ciphertext: data.passphrase ? await seal(data.passphrase) : null,
         key_hint: keyHint(data.apiKey),
         status: "connected",
         last_error: null,
       } as never,
       { onConflict: "user_id,venue,key_hint" },
     );
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(friendlyWalletError(error.message) ?? error.message);
 
     const { syncPortfolio } = await import("@/lib/portfolio.server");
     return syncPortfolio(supabaseAdmin as never, context.userId);
@@ -93,6 +109,9 @@ export const addWallet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => addWalletSchema.parse(input))
   .handler(async ({ data, context }) => {
+    const { assertTier } = await import("@/lib/tier-lookup.server");
+    await assertTier(context.supabase as never, context.userId, "portfolio");
+
     const { isValidAddress } = await import("@/lib/wallets.server");
     if (!isValidAddress(data.chain, data.address)) {
       throw new Error("That address does not look valid for the selected chain.");
@@ -140,9 +159,24 @@ export const removeConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => idSchema.parse(input))
   .handler(async ({ data, context }) => {
-    await context.supabase.from("exchange_connections").delete().eq("id", data.id);
-    await context.supabase.from("wallet_addresses").delete().eq("id", data.id);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { checkRateLimit } = await import("@/lib/rate-limit.server");
+    const throttle = await checkRateLimit(supabaseAdmin as never, context.userId, "connection_remove", 15, 10 * 60_000);
+    if (!throttle.allowed) {
+      throw new Error(
+        `Too many changes recently. Please wait ${Math.ceil(throttle.retryAfterSeconds / 60)} minute(s) and try again.`,
+      );
+    }
+
+    const [ex, wa] = await Promise.all([
+      context.supabase.from("exchange_connections").delete().eq("id", data.id).select("id"),
+      context.supabase.from("wallet_addresses").delete().eq("id", data.id).select("id"),
+    ]);
+    // RLS silently no-ops a delete of an ID you don't own — an unrecognized
+    // ID matched nothing, so there's nothing new to resync.
+    const removed = (ex.data?.length ?? 0) + (wa.data?.length ?? 0) > 0;
+    if (!removed) return { holdings: 0, totalUsd: 0, errors: [] };
+
     const { syncPortfolio } = await import("@/lib/portfolio.server");
     return syncPortfolio(supabaseAdmin as never, context.userId);
   });

@@ -109,7 +109,7 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
   const all: ToolSet = {
     get_market_pulse: tool({
       description:
-        "The current EliteFlux market read: whale phase, sentiment, exit pressure, momentum ignition, derivatives crowding (funding rate), order-book imbalance, social attention, macro coupling (DXY/SPX/gold correlation), cross-exchange divergence and multi-timeframe confluence (how unanimous 1h/4h/24h/7d moves are across the market). Also includes the flux score, regime and leading narrative on ELITE — those two layers are Elite-exclusive, so an OPERATOR caller gets null there; don't claim a flux score or narrative read for an Operator user. Call this before any market opinion.",
+        "The current EliteFlux market read: sentiment, exit pressure, momentum ignition, derivatives crowding (funding rate), order-book imbalance, social attention, cross-exchange divergence and multi-timeframe confluence (how unanimous 1h/4h/24h/7d moves are across the market). Whale phase, options-market read, macro coupling (DXY/SPX/gold correlation), flux score, regime and leading narrative are Elite-exclusive — an OPERATOR caller gets null there; don't claim any of those for an Operator user. Call this before any market opinion.",
       inputSchema: z.object({}),
       execute: async () => {
         const r = await getBrainSnapshotCached();
@@ -126,7 +126,7 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
           btcDominance: r.snapshot.marketOverview.btcDominance,
           btcPrice: r.snapshot.marketOverview.btcPrice,
           liquidityFlow: r.snapshot.marketOverview.liquidityFlow,
-          whale: { score: r.whale.score, phase: r.whale.phase },
+          whale: eliteOnly ? { score: r.whale.score, phase: r.whale.phase, methodology: r.whale.methodology } : null,
           sentiment: { score: r.sentiment.score, state: r.sentiment.state },
           exitPressure: r.exit.marketExitPressure,
           momentumIgnition: r.ignition.ignitionScore,
@@ -147,16 +147,20 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
             note: "50 = neutral. Above 50 = net USDT/USDC minting (fresh dollars entering, usually bullish); below = net burning (dollars leaving).",
             perSymbol: r.stablecoin.perSymbol,
           },
-          optionsMarket: {
-            note: "Deribit BTC/ETH option chain — real put/call ratio, IV and max pain. Below 50 = put-heavy (fear/hedging); above = call-heavy (greed).",
-            perCurrency: r.options.perCurrency,
-          },
-          macro: {
-            regime: r.macro.regime,
-            score: r.macro.score,
-            correlations: { dxy: r.macro.dxy, spx: r.macro.spx, gold: r.macro.gold },
-            note: "30-day correlation between BTC and the dollar index / S&P 500 / gold. High SPX correlation means crypto is trading as a risk asset, not on its own fundamentals right now.",
-          },
+          optionsMarket: eliteOnly
+            ? {
+                note: "Deribit BTC/ETH option chain — real put/call ratio, IV and max pain. Below 50 = put-heavy (fear/hedging); above = call-heavy (greed).",
+                perCurrency: r.options.perCurrency,
+              }
+            : null,
+          macro: eliteOnly
+            ? {
+                regime: r.macro.regime,
+                score: r.macro.score,
+                correlations: { dxy: r.macro.dxy, spx: r.macro.spx, gold: r.macro.gold },
+                note: "30-day correlation between BTC and the dollar index / S&P 500 / gold. High SPX correlation means crypto is trading as a risk asset, not on its own fundamentals right now.",
+              }
+            : null,
           crossExchangeDivergence: {
             marketDivergencePct: r.crossExchange.marketDivergencePct,
             notableAssets: r.crossExchange.perAsset,
@@ -428,12 +432,15 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
 
     get_coin_intel: tool({
       description:
-        "Per-asset EliteFlux intelligence: price, 24h move, momentum, risk, whale phase, exit pressure, opportunity stance, funding-rate crowding, order-book imbalance, whether it's trending, multi-timeframe confluence, community trust (from other users' opportunity ratings), crowd positioning (aggregated accumulate/reduce/watch/avoid stance counts from EliteFlux's own users' logged calls — proprietary, nobody else has this), and what EliteFlux's own users are logging for it. Pass symbols to narrow, or null for the top of the universe.",
+        "Per-asset EliteFlux intelligence: price, 24h move, momentum, risk, exit pressure, opportunity stance, funding-rate crowding, order-book imbalance, whether it's trending, multi-timeframe confluence, community trust (from other users' opportunity ratings), crowd positioning (aggregated accumulate/reduce/watch/avoid stance counts from EliteFlux's own users' logged calls — proprietary, nobody else has this), and what EliteFlux's own users are logging for it. Whale phase/score and on-chain signal are Elite-exclusive — an OPERATOR caller gets null there. Pass symbols to narrow, or null for the top of the universe.",
       inputSchema: z.object({
         symbols: z.array(z.string()).nullable().describe("Ticker symbols like ['BTC','SOL'], or null for the leaders."),
       }),
       execute: async ({ symbols }) => {
         const r = await getBrainSnapshotCached();
+        // whale/on-chain are Elite-exclusive (tier-matrix.ts TIER_ACCESS) —
+        // same redaction as get_market_pulse above, not just a prompt hint.
+        const eliteOnly = ctx.tier === "elite";
         const want = symbols?.map((s) => s.trim().toUpperCase());
         const whale = new Map(r.whale.topSignals.map((s) => [s.symbol, s]));
         const exit = new Map(r.exit.assets.map((a) => [a.symbol, a]));
@@ -452,8 +459,8 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
             risk: c.risk,
             flow: c.flow,
             btcCorrelation: c.btcCorrelation,
-            whalePhase: whale.get(c.symbol)?.phase ?? null,
-            whaleScore: whale.get(c.symbol)?.score ?? null,
+            whalePhase: eliteOnly ? (whale.get(c.symbol)?.phase ?? null) : null,
+            whaleScore: eliteOnly ? (whale.get(c.symbol)?.score ?? null) : null,
             exitPressure: exit.get(c.symbol)?.exitPressureScore ?? null,
             exitBand: exit.get(c.symbol)?.band ?? null,
             ignition: ign.get(c.symbol)?.score ?? null,
@@ -461,7 +468,7 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
             fundingRateAnnualized: r.derivatives.perAsset[c.symbol]?.fundingRateAnnualized ?? null,
             orderBookImbalance: r.orderbook.perAsset[c.symbol]?.imbalance ?? null,
             trending: r.social.perAsset[c.symbol]?.trending ?? false,
-            onChainSignal: r.onchain.perAsset[c.symbol]?.rationale ?? null,
+            onChainSignal: eliteOnly ? (r.onchain.perAsset[c.symbol]?.rationale ?? null) : null,
             volatilityRegime: r.volatility.perAsset[c.symbol]?.regime ?? "unknown",
             volatilityPercentile: r.volatility.perAsset[c.symbol]?.percentile ?? null,
             crossExchangeDivergencePct: r.crossExchange.perAsset[c.symbol]?.divergencePct ?? null,
@@ -516,6 +523,7 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
             confidence: r.smartMoney.confidenceScore,
             dominantClass: r.smartMoney.dominantClass,
             coordinationIndex: r.smartMoney.coordinationIndex,
+            methodology: r.smartMoney.methodology,
           },
           pumpPressure: { score: r.pressure.score, band: r.pressure.band },
           narrativeRotationVelocity: r.narrative.rotationVelocity,

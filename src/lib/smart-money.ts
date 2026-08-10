@@ -1,4 +1,4 @@
-import type { WhaleAssetSignal, WhaleIntel } from "./whale-intel";
+import { WHALE_METHODOLOGY, type WhaleAssetSignal, type WhaleIntel } from "./whale-intel";
 
 export type ClusterClass =
   | "Institutional Accumulation Cluster"
@@ -21,6 +21,8 @@ export interface SmartMoneyIntel {
   confidenceScore: number; // 0..100 global smart money confidence
   dominantClass: ClusterClass;
   coordinationIndex: number; // 0..100 — how synchronized whales appear
+  /** Built entirely on whale-intel.ts's price/volume clustering — same caveat applies, see WHALE_METHODOLOGY. */
+  methodology: string;
 }
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
@@ -33,6 +35,7 @@ export function computeSmartMoney(whale: WhaleIntel): SmartMoneyIntel {
       confidenceScore: 25,
       dominantClass: "Mixed Flow / Uncertain",
       coordinationIndex: 0,
+      methodology: WHALE_METHODOLOGY,
     };
   }
 
@@ -97,5 +100,5 @@ export function computeSmartMoney(whale: WhaleIntel): SmartMoneyIntel {
     ),
   );
 
-  return { clusters, confidenceScore, dominantClass, coordinationIndex };
+  return { clusters, confidenceScore, dominantClass, coordinationIndex, methodology: WHALE_METHODOLOGY };
 }

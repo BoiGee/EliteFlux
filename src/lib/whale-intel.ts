@@ -15,6 +15,18 @@ export interface WhaleAssetSignal {
   reason: string;
 }
 
+/**
+ * Honest methodology disclosure, carried on every WhaleIntel result so it
+ * travels with the data to every consumer (dashboard, coach, MCP) rather
+ * than needing every call site to remember to say it. This module has no
+ * wallet/address data at all — it infers "whale activity" purely from
+ * exchange ticker price/volume patterns. Real on-chain wallet tracking
+ * exists separately in onchain-intel.ts (Ethereum mainnet only, gated on
+ * ETHERSCAN_API_KEY) and is never merged into this signal.
+ */
+export const WHALE_METHODOLOGY =
+  "Derived from exchange ticker price/volume patterns, not on-chain wallet tracking. A volume spike moving with price in a directional way scores as 'whale activity' — it is a market-microstructure proxy, not a confirmed large-wallet transaction.";
+
 export interface WhaleIntel {
   score: number; // 0..100 global whale activity
   phase: WhalePhase;
@@ -22,6 +34,7 @@ export interface WhaleIntel {
   topSignals: WhaleAssetSignal[];
   accumulating: number;
   distributing: number;
+  methodology: string;
 }
 
 export interface SymbolHistorySample {
@@ -121,5 +134,6 @@ export function computeWhaleIntel(snapshot: MarketSnapshot, history: HistoryMap)
     topSignals,
     accumulating,
     distributing,
+    methodology: WHALE_METHODOLOGY,
   };
 }

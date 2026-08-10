@@ -56,6 +56,31 @@ export function verifyTelegramPayload(payload: TelegramPayload): TelegramPayload
   return payload;
 }
 
+/**
+ * Telegram's signed payload is valid (and replayable) for the whole
+ * MAX_AGE_SECONDS window — without this, the same captured callback could be
+ * resubmitted any number of times, e.g. to brute-force an invite code with
+ * no per-attempt friction. Returns false the second and subsequent time the
+ * exact same hash is seen.
+ */
+export async function markPayloadUsedOnce(admin: Admin, payloadHash: string): Promise<boolean> {
+  // Cast: telegram_login_attempts is a brand-new table, added ahead of the
+  // next `supabase gen types` regeneration.
+  const { error } = await (admin as never as { from: (t: string) => any })
+    .from("telegram_login_attempts")
+    .insert({ payload_hash: payloadHash });
+  // 23505 = unique_violation — this exact payload was already used.
+  if (error) return (error as { code?: string }).code !== "23505" ? true : false;
+  return true;
+}
+
+/** Constant-time invite-code compare — a plain `===` leaks timing on the first differing character. */
+export function inviteCodeMatches(given: string, expected: string): boolean {
+  const a = createHash("sha256").update(given.trim().toLowerCase()).digest();
+  const b = createHash("sha256").update(expected.trim().toLowerCase()).digest();
+  return timingSafeEqual(a, b);
+}
+
 export function telegramEmail(telegramId: string): string {
   return `tg-${telegramId}@telegram.eliteflux.local`;
 }

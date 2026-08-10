@@ -90,7 +90,7 @@ export async function notifyOperatorsOfFailure(
     console.error(`[eliteflux] job "${job}" failed twice in a row`, summary);
 
     const { sendTransactionalEmail } = await import("./email.server");
-    const appUrl = process.env["APP_URL"] ?? "https://elitefluxx.lovable.app";
+    const appUrl = process.env["APP_URL"] ?? "https://elite-flux.com";
     for (const to of emails) {
       await sendTransactionalEmail({
         to,

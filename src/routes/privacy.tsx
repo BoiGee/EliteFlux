@@ -9,12 +9,12 @@ export const Route = createFileRoute("/privacy")({
       { property: "og:title", content: "Privacy Policy — EliteFlux" },
       { property: "og:description", content: "How EliteFlux collects, uses, stores and deletes your data — in plain language." },
       { property: "og:type", content: "website" },
-      { property: "og:url", content: "https://elitefluxx.lovable.app/privacy" },
-      { property: "og:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { property: "og:url", content: "https://elite-flux.com/privacy" },
+      { property: "og:image", content: "https://elite-flux.com/og-banner.jpg" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "https://elitefluxx.lovable.app/og-banner.jpg" },
+      { name: "twitter:image", content: "https://elite-flux.com/og-banner.jpg" },
     ],
-    links: [{ rel: "canonical", href: "https://elitefluxx.lovable.app/privacy" }],
+    links: [{ rel: "canonical", href: "https://elite-flux.com/privacy" }],
   }),
 
   component: () => (
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/privacy")({
       <p>We do not sell your data. We do not run third-party ad trackers on the dashboard.</p>
 
       <h2>4. Storage</h2>
-      <p>Data is stored on Lovable Cloud infrastructure (Supabase / managed Postgres) with row-level security.</p>
+      <p>Data is stored with our cloud infrastructure provider (Cloudflare, with Supabase for authentication and data storage), with row-level security.</p>
 
       <h2>5. Your rights</h2>
       <p>You can export, correct, or delete your account at any time by contacting support@eliteflux.app. Deletion removes profile, watchlist, alerts, and payment history within 30 days.</p>

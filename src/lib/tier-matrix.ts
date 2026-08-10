@@ -19,7 +19,9 @@ export const TIER_DISPLAY_NAME: Record<Tier, string> = {
 export const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, elite: 2 };
 
 /**
- * Which module keys each tier can open.
+ * Which capability keys each tier can open — dashboard intelligence modules
+ * plus a couple of whole-page capabilities (portfolio linking, autopilot)
+ * that use the exact same gate.
  *
  * Free is deliberately down to a single module: after the 7-day Elite
  * trial ends without a paid plan, that's the entire dashboard a lapsed
@@ -28,17 +30,26 @@ export const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, elite: 2 };
  * Elite-only (Operator keeps exit/momentum/sentiment/risk/coin-intel as its
  * baseline) so Elite is a meaningfully different tier, not just Operator
  * plus a few extras — Elite is every module the platform has.
+ *
+ * "portfolio" (connecting exchanges/wallets) is Operator+, per the pricing
+ * page and coach-knowledge.ts's PLANS.pro entry. "autopilot" (arming
+ * automated trade execution) is Elite-only, per PLANS.elite and
+ * coach-knowledge.ts FEATURES' `autopilot` entry (`plan: "elite"`). Both
+ * must be enforced server-side wherever they're checked — a disabled button
+ * in the UI is not a tier gate.
  */
 export const TIER_ACCESS: Record<Tier, Set<string>> = {
   free: new Set(["recommendations"]),
   pro: new Set([
     "recommendations", "market-flow", "heatmap", "meme", "events",
     "exit", "momentum", "sentiment", "risk", "coin-intel",
+    "portfolio",
   ]),
   elite: new Set([
     "recommendations", "market-flow", "heatmap", "meme", "events",
     "exit", "momentum", "sentiment", "narrative-detect", "elite-brain", "risk", "coin-intel",
     "brain-v3", "smart-money", "whale", "onchain",
+    "portfolio", "autopilot",
   ]),
 };
 
