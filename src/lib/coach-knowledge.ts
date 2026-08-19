@@ -519,6 +519,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 
 export const CHANGELOG: ChangeDoc[] = [
   {
+    date: "2026-08-19",
+    title: "Clearer message when an exchange connection is rejected for IP reasons",
+    detail:
+      "Binance (and others) return one bundled error for a bad key, an IP restriction, or a missing permission, and EliteFlux used to always blame missing read permission. It now recognizes the IP-restriction case and tells you to set the key to Unrestricted access — EliteFlux runs on cloud infrastructure with no fixed outbound IP, so an IP allowlist on the key will always fail here even with reading enabled.",
+  },
+  {
     date: "2026-08-10",
     title: "EliteFlux now runs on Cloudflare",
     detail:
