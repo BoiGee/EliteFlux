@@ -2,9 +2,9 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Compass, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from "lucide-react";
+import { ArrowLeft, Compass, KeyRound, Lock, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
+import { useAuth, meetsTier } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,19 +60,36 @@ type Venue = (typeof VENUES)[number]["key"];
 
 const READ_ONLY_VENUES = new Set<Venue>(["gateio", "kucoin"]);
 
+// Mirrors wallets.server.ts's isValidAddress exactly (that file is
+// server-only, not importable from a client route) — previously this used a
+// flat `length >= 26` check, looser than the server's real per-chain format,
+// so a 26-41 char string could pass client validation and only bounce after
+// a round trip to the server's "That address does not look valid" error.
+function isValidChainAddress(chain: "evm" | "solana", address: string): boolean {
+  const a = address.trim();
+  return chain === "evm" ? /^0x[a-fA-F0-9]{40}$/.test(a) : /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a);
+}
+
 const money = (n: number | null | undefined) =>
   n === null || n === undefined
     ? "—"
     : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 function PortfolioPage() {
-  const { user, loading } = useAuth();
+  const { user, tier, loading } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
   }, [user, loading, navigate]);
+
+  // The server (connectExchange/addWallet, both assertTier(..., "portfolio"))
+  // already refuses this for Free accounts — this is a UX improvement only,
+  // matching /autopilot's pattern of locking the gated action inline with an
+  // upgrade hint rather than letting a Free user complete a multi-step
+  // wizard just to hit a rejected toast at the very end.
+  const canConnect = meetsTier(tier, "pro");
 
   const fetchAll = useServerFn(listConnections);
   const connect = useServerFn(connectExchange);
@@ -321,11 +338,19 @@ function PortfolioPage() {
 
             <div className="rounded-lg bg-surface-2/40 p-3 space-y-2">
               <p className="text-xs font-semibold">Never done this before?</p>
+              {!canConnect && (
+                <p className="text-xs text-muted-foreground">
+                  Exchange connections are an Operator+ feature.{" "}
+                  <Link to="/pricing" className="text-primary hover:underline">
+                    Compare plans
+                  </Link>
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => setWizardOpen(true)}>
-                  <Compass className="w-3.5 h-3.5 mr-1.5" /> Walk me through it
+                <Button size="sm" onClick={() => setWizardOpen(true)} disabled={!canConnect}>
+                  {canConnect ? <Compass className="w-3.5 h-3.5 mr-1.5" /> : <Lock className="w-3.5 h-3.5 mr-1.5" />} Walk me through it
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setExpert((v) => !v)}>
+                <Button size="sm" variant="outline" onClick={() => setExpert((v) => !v)} disabled={!canConnect}>
                   {expert ? "Hide the form" : "I know what I'm doing"}
                 </Button>
                 <Button
@@ -439,7 +464,7 @@ function PortfolioPage() {
 
             <Button
               className="w-full"
-              disabled={connectM.isPending || apiKey.length < 8 || apiSecret.length < 8 || !noWithdrawAck}
+              disabled={!canConnect || connectM.isPending || apiKey.length < 8 || apiSecret.length < 8 || !noWithdrawAck}
               onClick={() => connectM.mutate(undefined)}
             >
               <Plus className="w-4 h-4 mr-2" /> {connectM.isPending ? "Verifying…" : "Connect exchange"}
@@ -496,8 +521,16 @@ function PortfolioPage() {
 
             <div className="rounded-lg bg-surface-2/40 p-3 space-y-2">
               <p className="text-xs font-semibold">Never done this before?</p>
-              <Button size="sm" onClick={() => setWalletWizardOpen(true)}>
-                <Compass className="w-3.5 h-3.5 mr-1.5" /> Walk me through it
+              {!canConnect && (
+                <p className="text-xs text-muted-foreground">
+                  Wallet tracking is an Operator+ feature.{" "}
+                  <Link to="/pricing" className="text-primary hover:underline">
+                    Compare plans
+                  </Link>
+                </p>
+              )}
+              <Button size="sm" onClick={() => setWalletWizardOpen(true)} disabled={!canConnect}>
+                {canConnect ? <Compass className="w-3.5 h-3.5 mr-1.5" /> : <Lock className="w-3.5 h-3.5 mr-1.5" />} Walk me through it
               </Button>
             </div>
 
@@ -525,7 +558,12 @@ function PortfolioPage() {
               />
             </div>
 
-            <Button className="w-full" variant="outline" disabled={walletM.isPending || address.trim().length < 26} onClick={() => walletM.mutate(undefined)}>
+            <Button
+              className="w-full"
+              variant="outline"
+              disabled={!canConnect || walletM.isPending || !isValidChainAddress(chain, address)}
+              onClick={() => walletM.mutate(undefined)}
+            >
               <Plus className="w-4 h-4 mr-2" /> {walletM.isPending ? "Reading chain…" : "Track wallet"}
             </Button>
 

@@ -120,7 +120,12 @@ export function ConnectWalletWizard({
     setChain(SUPPORTED_CHAINS[a][0]);
   };
 
-  const canFinish = address.trim().length >= 26 && !pending;
+  // Mirrors wallets.server.ts's isValidAddress exactly (server-only, not
+  // importable here) — previously a flat length check (>= 26) was looser
+  // than the server's real per-chain format, so a malformed address could
+  // pass this wizard and only bounce after a round trip to the server.
+  const isValidAddress = chain === "evm" ? /^0x[a-fA-F0-9]{40}$/.test(address.trim()) : /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address.trim());
+  const canFinish = isValidAddress && !pending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
