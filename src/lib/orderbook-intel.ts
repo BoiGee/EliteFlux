@@ -57,9 +57,23 @@ export type RawOrderBookData = Map<string, RawDepth>;
 // protection, confirmed live via wrangler tail.
 const MAX_CONCURRENT_REQUESTS = 3;
 
+// Binance is confirmed blocked (403) on every request from this Worker's
+// egress — unlike fetchDerivativesData (which makes one probe call and
+// bails immediately on failure), this used to attempt the full per-symbol
+// fan-out regardless, burning up to ~20 guaranteed-to-fail subrequests
+// every cycle. Confirmed live: a cold cycle can exhaust Cloudflare's
+// per-invocation subrequest budget before ever reaching later Supabase
+// writes (finishRun included) — "Too many subrequests by single Worker
+// invocation" was the actual error, not a hang. Short-circuiting here
+// removes the single biggest source of wasted subrequests in the pipeline.
+// Revisit if Binance ever becomes reachable again, or once this is
+// reimplemented against OKX/Bybit depth endpoints instead.
+const BINANCE_ORDERBOOK_BLOCKED = true;
+
 /** Best-effort: one request per symbol, partial coverage on failure is fine. */
 export async function fetchOrderBookData(binanceSymbols: string[]): Promise<RawOrderBookData> {
   const out: RawOrderBookData = new Map();
+  if (BINANCE_ORDERBOOK_BLOCKED) return out;
   await mapWithConcurrency(binanceSymbols, MAX_CONCURRENT_REQUESTS, async (sym) => {
     try {
       const res = await depthFetch(`${SPOT_REST}/depth?symbol=${sym}&limit=${DEPTH_LIMIT}`);
