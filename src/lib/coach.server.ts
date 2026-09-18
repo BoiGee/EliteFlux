@@ -851,7 +851,26 @@ export async function gradeDueCalls(
     created_at: string;
   }[];
   const now = Date.now();
-  let graded = 0;
+  const nowIso = new Date(now).toISOString();
+
+  // Previously one sequential .update() per graded call — with this
+  // Supabase instance's observed ~7s-per-request floor, N due calls meant
+  // N*7s serially, and each one was its own subrequest against the same
+  // invocation's Cloudflare subrequest budget (confirmed live: "Too many
+  // subrequests by single Worker invocation" traced back partly to this
+  // block's consistently ~28s runtime). Collecting every update and
+  // sending them as one upsert (each row carries its own id + values, so
+  // this is still N distinct row updates, just one round trip) fixes both.
+  const updates: {
+    id: string;
+    status: string;
+    exit_price: number;
+    move_pct: number;
+    score: number;
+    grade: string;
+    verdict: string;
+    graded_at: string;
+  }[] = [];
 
   for (const c of rows) {
     const due = new Date(c.created_at).getTime() + c.horizon_hours * 3600_000;
@@ -870,19 +889,19 @@ export async function gradeDueCalls(
           ? `Wrong side — ${c.symbol} moved ${move >= 0 ? "+" : ""}${move.toFixed(1)}% against the call.`
           : `Flat — ${c.symbol} moved ${move >= 0 ? "+" : ""}${move.toFixed(1)}%, no real edge either way.`;
 
-    await admin
-      .from("coach_calls")
-      .update({
-        status: "graded",
-        exit_price: cur,
-        move_pct: Number(move.toFixed(3)),
-        score: Number(score.toFixed(3)),
-        grade,
-        verdict,
-        graded_at: new Date(now).toISOString(),
-      })
-      .eq("id", c.id);
-    graded++;
+    updates.push({
+      id: c.id,
+      status: "graded",
+      exit_price: cur,
+      move_pct: Number(move.toFixed(3)),
+      score: Number(score.toFixed(3)),
+      grade,
+      verdict,
+      graded_at: nowIso,
+    });
   }
-  return graded;
+
+  if (!updates.length) return 0;
+  const { error } = await admin.from("coach_calls").upsert(updates, { onConflict: "id" });
+  return error ? 0 : updates.length;
 }
