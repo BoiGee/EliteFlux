@@ -63,6 +63,16 @@ export default {
     }
   },
   async scheduled(controller: { cron: string }) {
-    await runScheduledTick(controller.cron);
+    // TEMPORARY diagnostic — proves the scheduled handler itself is reached
+    // before anything downstream (job lookup, Supabase client, job body) can
+    // swallow evidence of what's happening. Revert once the cause is found.
+    console.log(`[scheduled] invoked for cron=${controller.cron}`);
+    try {
+      await runScheduledTick(controller.cron);
+      console.log(`[scheduled] runScheduledTick completed for cron=${controller.cron}`);
+    } catch (e) {
+      console.error(`[scheduled] runScheduledTick threw for cron=${controller.cron}`, e);
+      throw e;
+    }
   },
 };
