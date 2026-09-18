@@ -64,11 +64,7 @@ export function verifyTelegramPayload(payload: TelegramPayload): TelegramPayload
  * exact same hash is seen.
  */
 export async function markPayloadUsedOnce(admin: Admin, payloadHash: string): Promise<boolean> {
-  // Cast: telegram_login_attempts is a brand-new table, added ahead of the
-  // next `supabase gen types` regeneration.
-  const { error } = await (admin as never as { from: (t: string) => any })
-    .from("telegram_login_attempts")
-    .insert({ payload_hash: payloadHash });
+  const { error } = await admin.from("telegram_login_attempts").insert({ payload_hash: payloadHash });
   // 23505 = unique_violation — this exact payload was already used.
   if (error) return (error as { code?: string }).code !== "23505" ? true : false;
   return true;
