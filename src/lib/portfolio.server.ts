@@ -6,21 +6,66 @@ import { open } from "./vault.server";
 import { fetchBalances, type Venue } from "./exchanges.server";
 import { fetchWalletBalances, type Chain } from "./wallets.server";
 import { isStable, type PortfolioView } from "./autopilot-engine";
+import { fetchOkxPrices } from "./cross-exchange-intel";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DB = SupabaseClient<any, any, any>;
 
 const BINANCE_REST = "https://api.binance.com/api/v3";
+const BYBIT_REST = "https://api.bybit.com/v5";
 
-/** USD prices for a set of tickers. Stables are pinned to 1. */
+/** Second exchange, public ticker read — Bybit's spot symbol ("BTCUSDT") needs no reshaping to match `${symbol}USDT` keys. */
+async function fetchBybitPrices(): Promise<Map<string, number> | null> {
+  try {
+    const res = await fetch(`${BYBIT_REST}/market/tickers?category=spot`, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { result?: { list?: { symbol: string; lastPrice: string }[] } };
+    const map = new Map<string, number>();
+    for (const t of json.result?.list ?? []) {
+      const price = Number(t.lastPrice);
+      if (Number.isFinite(price) && price > 0) map.set(t.symbol, price);
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * USD prices for a set of tickers. Stables are pinned to 1. Binance returns
+ * 403 (blocked) on every request from this Worker's egress — confirmed live
+ * in production — so it's kept only as a last-resort tail here, tried after
+ * OKX and Bybit's public ticker reads both come up short.
+ */
 export async function fetchPrices(symbols: string[]): Promise<Record<string, number>> {
   const prices: Record<string, number> = {};
   const wanted = [...new Set(symbols.map((s) => s.toUpperCase()))];
   for (const s of wanted) if (isStable(s)) prices[s] = 1;
 
-  const pairs = wanted.filter((s) => !isStable(s)).map((s) => `${s}USDT`);
-  if (pairs.length === 0) return prices;
+  let needed = wanted.filter((s) => !isStable(s));
+  if (needed.length === 0) return prices;
 
+  const okx = await fetchOkxPrices();
+  if (okx) {
+    for (const s of needed) {
+      const p = okx.get(`${s}-USDT`);
+      if (p) prices[s] = p;
+    }
+    needed = needed.filter((s) => !(s in prices));
+  }
+  if (needed.length === 0) return prices;
+
+  const bybit = await fetchBybitPrices();
+  if (bybit) {
+    for (const s of needed) {
+      const p = bybit.get(`${s}USDT`);
+      if (p) prices[s] = p;
+    }
+    needed = needed.filter((s) => !(s in prices));
+  }
+  if (needed.length === 0) return prices;
+
+  const pairs = needed.map((s) => `${s}USDT`);
   try {
     const url = `${BINANCE_REST}/ticker/price?symbols=${encodeURIComponent(JSON.stringify(pairs))}`;
     const res = await fetch(url);

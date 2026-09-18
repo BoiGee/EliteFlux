@@ -4,8 +4,8 @@
 // Same asset, two venues, two prices. A sustained premium on one
 // exchange (the modern "kimchi premium" effect) signals demand
 // concentrated there outpacing arbitrage capacity — a real
-// micro-signal, not a proxy. Binance is our primary price feed
-// throughout the app, so divergence is measured as Binance vs OKX.
+// micro-signal, not a proxy. Divergence is measured between whatever
+// venue won this cycle's market feed and OKX.
 // ============================================================
 import type { MarketSnapshot } from "./market";
 

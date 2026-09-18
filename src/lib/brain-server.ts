@@ -29,6 +29,7 @@ import type { SignalEventInput } from "./signal-tracking.server";
 const BINANCE_REST = "https://api.binance.com/api/v3";
 const BINANCE_MIRROR = "https://data-api.binance.vision/api/v3";
 const OKX_REST = "https://www.okx.com/api/v5";
+const BYBIT_REST = "https://api.bybit.com/v5";
 const COINGECKO = "https://api.coingecko.com/api/v3";
 const PAPRIKA = "https://api.coinpaprika.com/v1";
 const FNG = "https://api.alternative.me/fng/?limit=1";
@@ -119,6 +120,42 @@ async function fetchOkxTickers(): Promise<Record<string, Ticker>> {
     };
   }
   if (!Object.keys(out).length) throw new Error("OKX returned no usable tickers");
+  return out;
+}
+
+interface BybitTicker {
+  symbol: string;
+  lastPrice: string;
+  price24hPcnt: string; // fraction, e.g. "0.0123" = 1.23%
+  highPrice24h: string;
+  lowPrice24h: string;
+  volume24h: string; // base asset
+  turnover24h: string; // quote (USDT) volume
+}
+
+/** Third exchange, no auth — Bybit's spot symbol already matches the
+ * Binance-shaped pair key ("BTCUSDT") every downstream consumer expects,
+ * unlike OKX's dashed instId. */
+async function fetchBybitTickers(): Promise<Record<string, Ticker>> {
+  const json = await readJson<{ result?: { list?: BybitTicker[] } }>(`${BYBIT_REST}/market/tickers?category=spot`, "Bybit");
+  const bySymbol = new Map((json.result?.list ?? []).map((t) => [t.symbol, t]));
+  const out: Record<string, Ticker> = {};
+  for (const c of COIN_UNIVERSE) {
+    if (!c.binance) continue;
+    const t = bySymbol.get(c.binance);
+    if (!t) continue;
+    const price = parseFloat(t.lastPrice);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    out[c.binance] = {
+      price,
+      change24h: (parseFloat(t.price24hPcnt) || 0) * 100,
+      volume: parseFloat(t.volume24h) || 0,
+      quoteVolume: parseFloat(t.turnover24h) || 0,
+      high24h: parseFloat(t.highPrice24h) || price,
+      low24h: parseFloat(t.lowPrice24h) || price,
+    };
+  }
+  if (!Object.keys(out).length) throw new Error("Bybit returned no usable tickers");
   return out;
 }
 
@@ -217,17 +254,26 @@ async function fetchStoredTickers(): Promise<Record<string, Ticker>> {
   return stored.tickers;
 }
 
-export type TickerSource = "keyed" | "primary" | "mirror" | "secondary" | "aggregator" | "fallback" | "stored";
+export type TickerSource = "keyed" | "primary" | "secondary" | "aggregator" | "fallback" | "extra" | "mirror" | "stored";
 
+// Binance returns 403 (blocked) on every request from this Worker's egress —
+// confirmed live in production. Two guaranteed-to-fail Binance attempts
+// before falling through used to waste real cycle time every run (measured
+// contributing to a 22s job runtime and Cloudflare's own "stalled response
+// canceled" warnings). OKX and Bybit both work from here, so they're tried
+// first now; Binance stays in the chain as a best-effort tail (it may work
+// again from a different egress path, and other code paths still need it
+// directly) rather than the first thing every cycle pays for.
 function tickerSources(): Array<{ id: TickerSource; load: () => Promise<Record<string, Ticker>> }> {
   const key = process.env["COINGECKO_API_KEY"];
   return [
     ...(key ? [{ id: "keyed" as const, load: () => fetchKeyedTickers(key) }] : []),
-    { id: "primary" as const, load: () => fetchBinanceLike(BINANCE_REST, "Primary venue") },
-    { id: "mirror" as const, load: () => fetchBinanceLike(BINANCE_MIRROR, "Primary mirror") },
-    { id: "secondary" as const, load: () => fetchOkxTickers() },
+    { id: "primary" as const, load: () => fetchOkxTickers() },
+    { id: "secondary" as const, load: () => fetchBybitTickers() },
     { id: "aggregator" as const, load: () => fetchPaprikaTickers() },
     { id: "fallback" as const, load: () => fetchTickersFallback() },
+    { id: "extra" as const, load: () => fetchBinanceLike(BINANCE_REST, "Primary venue") },
+    { id: "mirror" as const, load: () => fetchBinanceLike(BINANCE_MIRROR, "Primary mirror") },
     { id: "stored" as const, load: () => fetchStoredTickers() },
   ];
 }

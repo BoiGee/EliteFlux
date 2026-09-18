@@ -164,7 +164,7 @@ export function buildCoachTools(ctx: { admin: Admin; userId: string; tier: Tier;
           crossExchangeDivergence: {
             marketDivergencePct: r.crossExchange.marketDivergencePct,
             notableAssets: r.crossExchange.perAsset,
-            note: "Binance vs OKX price gap. A sustained premium on one venue signals demand concentrated there outpacing arbitrage.",
+            note: "Price gap between your market feed and a second exchange (OKX). A sustained premium on one venue signals demand concentrated there outpacing arbitrage.",
           },
           confluence: {
             marketAlignment: r.confluence.marketAlignment,

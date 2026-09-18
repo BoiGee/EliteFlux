@@ -22,10 +22,11 @@ const JOBS = [
 const SOURCE_LABEL: Record<string, string> = {
   keyed: "Main data source (licensed)",
   primary: "Main data source",
-  mirror: "Main source (mirror) in use",
   secondary: "Secondary venue in use",
   aggregator: "Independent backup source in use",
   fallback: "Backup data source in use",
+  extra: "Backup venue in use",
+  mirror: "Backup venue (mirror) in use",
   stored: "Serving last saved prices — all live sources refused",
 };
 
