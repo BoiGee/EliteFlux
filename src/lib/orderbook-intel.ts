@@ -9,6 +9,7 @@
 // a genuinely independent signal from price/volume.
 // ============================================================
 import type { MarketSnapshot } from "./market";
+import { mapWithConcurrency } from "./concurrency.server";
 
 export interface OrderBookSignal {
   symbol: string;
@@ -47,21 +48,22 @@ function depthFetch(url: string): Promise<Response> {
 
 export type RawOrderBookData = Map<string, RawDepth>;
 
+// Capped rather than all-at-once — see concurrency.server.ts for why.
+const MAX_CONCURRENT_REQUESTS = 5;
+
 /** Best-effort: one request per symbol, partial coverage on failure is fine. */
 export async function fetchOrderBookData(binanceSymbols: string[]): Promise<RawOrderBookData> {
   const out: RawOrderBookData = new Map();
-  await Promise.all(
-    binanceSymbols.map(async (sym) => {
-      try {
-        const res = await depthFetch(`${SPOT_REST}/depth?symbol=${sym}&limit=${DEPTH_LIMIT}`);
-        if (!res.ok) return;
-        const json = (await res.json()) as RawDepth;
-        out.set(sym, json);
-      } catch {
-        /* one symbol missing is fine */
-      }
-    }),
-  );
+  await mapWithConcurrency(binanceSymbols, MAX_CONCURRENT_REQUESTS, async (sym) => {
+    try {
+      const res = await depthFetch(`${SPOT_REST}/depth?symbol=${sym}&limit=${DEPTH_LIMIT}`);
+      if (!res.ok) return;
+      const json = (await res.json()) as RawDepth;
+      out.set(sym, json);
+    } catch {
+      /* one symbol missing is fine */
+    }
+  });
   return out;
 }
 

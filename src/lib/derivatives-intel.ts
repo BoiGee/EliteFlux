@@ -10,6 +10,7 @@
 // way most of the other layers do.
 // ============================================================
 import type { MarketSnapshot } from "./market";
+import { mapWithConcurrency } from "./concurrency.server";
 
 export interface DerivativesSignal {
   symbol: string;
@@ -87,18 +88,17 @@ export async function fetchDerivativesData(binanceSymbols: string[]): Promise<Ra
   }
   if (!funding.size) return null;
 
-  await Promise.all(
-    binanceSymbols.map(async (sym) => {
-      try {
-        const res = await futuresFetch(`${FUTURES_REST}/openInterest?symbol=${sym}`);
-        if (!res.ok) return;
-        const row = (await res.json()) as RawOpenInterest;
-        openInterest.set(sym, parseFloat(row.openInterest));
-      } catch {
-        /* one symbol missing OI is fine */
-      }
-    }),
-  );
+  // Capped rather than all-at-once — see concurrency.server.ts for why.
+  await mapWithConcurrency(binanceSymbols, 5, async (sym) => {
+    try {
+      const res = await futuresFetch(`${FUTURES_REST}/openInterest?symbol=${sym}`);
+      if (!res.ok) return;
+      const row = (await res.json()) as RawOpenInterest;
+      openInterest.set(sym, parseFloat(row.openInterest));
+    } catch {
+      /* one symbol missing OI is fine */
+    }
+  });
 
   return { funding, markPrice, openInterest };
 }
