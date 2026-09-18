@@ -2,11 +2,19 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { runScheduledTick, startScheduler } from "./lib/scheduler.server";
+import { startScheduler } from "./lib/scheduler.server";
 
 // Cloudflare Workers sets this; Node/Bun does not. setInterval-based
 // scheduling only works on a persistent process — on Workers, background
-// jobs run via the `scheduled` handler below (Cron Triggers) instead.
+// jobs instead run via Cloudflare Cron Triggers, wired through the
+// "cloudflare:scheduled" Nitro hook (see lib/nitro-scheduled.server.ts) —
+// NOT a `scheduled` export on this default object. The nitro "cloudflare-
+// module" preset's own generated Worker entry defines `scheduled` itself
+// unconditionally and only ever fires that hook; a `scheduled` method
+// exported from here is never reached by Cloudflare's dispatch at all. (It
+// was defined here for over a month before that was discovered — every Cron
+// Trigger fired, Cloudflare reported "Ok", and nothing downstream ever ran:
+// no job, no error, no log. Don't re-add it here.)
 const isCloudflareWorkers =
   typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
 
@@ -60,19 +68,6 @@ export default {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
-    }
-  },
-  async scheduled(controller: { cron: string }) {
-    // TEMPORARY diagnostic — proves the scheduled handler itself is reached
-    // before anything downstream (job lookup, Supabase client, job body) can
-    // swallow evidence of what's happening. Revert once the cause is found.
-    console.log(`[scheduled] invoked for cron=${controller.cron}`);
-    try {
-      await runScheduledTick(controller.cron);
-      console.log(`[scheduled] runScheduledTick completed for cron=${controller.cron}`);
-    } catch (e) {
-      console.error(`[scheduled] runScheduledTick threw for cron=${controller.cron}`, e);
-      throw e;
     }
   },
 };

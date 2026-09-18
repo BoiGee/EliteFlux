@@ -20,7 +20,10 @@ export default defineConfig(async ({ command }) => {
 
   if (command === "build") {
     const { nitro } = await import("nitro/vite");
-    plugins.push(nitro({ preset: "cloudflare-module" }));
+    // Cloudflare Cron Triggers reach Nitro's cloudflare-module preset via a
+    // "cloudflare:scheduled" hook, not a hand-written `scheduled` export —
+    // see src/lib/nitro-scheduled.server.ts for why this is required.
+    plugins.push(nitro({ preset: "cloudflare-module", plugins: ["./src/lib/nitro-scheduled.server.ts"] }));
   }
 
   return {

@@ -28,15 +28,7 @@ export async function beginRun(admin: Admin, job: string): Promise<RunHandle | n
     .maybeSingle();
 
   // Unique partial index on (job) WHERE status='running' rejects concurrent runs.
-  if (error || !data) {
-    // TEMPORARY diagnostic: system_runs has recorded zero rows of any kind
-    // since 2026-08-08, across every job, on this Cloudflare deployment,
-    // despite an identical raw insert succeeding outside the app. This
-    // surfaces the actual swallowed error so the real cause is visible
-    // instead of every caller silently treating it as "lock contention".
-    console.error(`[beginRun] insert failed for job=${job}`, JSON.stringify(error), "data:", JSON.stringify(data));
-    return null;
-  }
+  if (error || !data) return null;
   return { id: data.id as string };
 }
 
