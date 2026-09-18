@@ -4,7 +4,7 @@ import { GUARDRAIL_BOUNDS } from "./autonomy";
 const b = GUARDRAIL_BOUNDS;
 
 export const connectExchangeSchema = z.object({
-  venue: z.enum(["binance", "bybit", "okx"]),
+  venue: z.enum(["binance", "bybit", "okx", "gateio", "kucoin", "mexc"]),
   label: z.string().trim().max(40).optional(),
   permission: z.enum(["read_only", "read_trade"]).default("read_only"),
   apiKey: z.string().trim().min(8).max(256),
@@ -83,9 +83,15 @@ export function friendlyConnectError(message: string): string | null {
   return null;
 }
 
-/** Same idea as friendlyConnectError, for wallet-address insert failures. */
+/** Same idea as friendlyConnectError, for wallet-address and exchange-connection insert failures. */
 export function friendlyWalletError(message: string): string | null {
   const m = (message || "").toLowerCase();
   if (/duplicate key|unique constraint/.test(m)) return "You've already added this wallet.";
+  // A newly-added venue can ship in app code slightly ahead of the database
+  // migration that registers it — the raw Postgres error here is a confusing
+  // "invalid input value for enum" rather than anything a user should see.
+  if (/invalid input value for enum/.test(m)) {
+    return "This exchange isn't fully set up on our end just yet — check back shortly.";
+  }
   return null;
 }

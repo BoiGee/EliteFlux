@@ -61,6 +61,33 @@ const STEPS: { venue: string; steps: string[] }[] = [
       "Add an IP whitelist if the option is offered to you.",
     ],
   },
+  {
+    venue: "MEXC",
+    steps: [
+      "Account → API Management → Create API Key.",
+      "Grant Read. Only add Spot Trading if you want Autopilot to act for you.",
+      "Never grant Withdraw.",
+      "Restrict access to trusted IPs if you can.",
+    ],
+  },
+  {
+    venue: "KuCoin",
+    steps: [
+      "Account → API Management → Create API. You will set a passphrase — keep it with the key.",
+      "Permission: General (read) only — EliteFlux doesn't place trades on KuCoin yet.",
+      "Never grant Transfer or Withdraw.",
+      "Copy the key, secret and passphrase once — KuCoin shows the secret a single time.",
+    ],
+  },
+  {
+    venue: "Gate.io",
+    steps: [
+      "Account → API Management → Create API Key.",
+      "Permission: Read Only — EliteFlux doesn't place trades on Gate.io yet.",
+      "Never grant Withdraw.",
+      "Restrict access to trusted IPs if you can.",
+    ],
+  },
 ];
 
 /** Plain-language explanation of exactly what happens to a pasted API key. */

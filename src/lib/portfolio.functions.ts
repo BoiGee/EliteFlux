@@ -75,7 +75,17 @@ export const connectExchange = createServerFn({ method: "POST" })
     // Binance with their generic "invalid key/IP/permissions" error.
     if (data.venue === "binance" && data.permission === "read_trade") {
       throw new Error(
-        "Binance requires a whitelisted IP for any key with Spot & Margin Trading enabled, and EliteFlux has no fixed outbound IP to give you — so this combination can never connect. Use a read-only Binance key for tracking and coaching, or connect Bybit/OKX instead if you want Autopilot to place trades for you.",
+        "Binance requires a whitelisted IP for any key with Spot & Margin Trading enabled, and EliteFlux has no fixed outbound IP to give you — so this combination can never connect. Use a read-only Binance key for tracking and coaching, or connect Bybit/OKX/MEXC instead if you want Autopilot to place trades for you.",
+      );
+    }
+
+    // Gate.io and KuCoin are tracking-only here — no order-placement
+    // integration exists for them, unrelated to Binance's IP constraint
+    // above. The UI already hides this option; this is the server-side
+    // backstop for anyone calling the endpoint directly.
+    if ((data.venue === "gateio" || data.venue === "kucoin") && data.permission === "read_trade") {
+      throw new Error(
+        `EliteFlux can only read balances on ${data.venue === "gateio" ? "Gate.io" : "KuCoin"} — Autopilot trading isn't offered there. Connect Bybit, OKX or MEXC instead if you want Flux to place orders for you.`,
       );
     }
 

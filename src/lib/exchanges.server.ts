@@ -1,8 +1,13 @@
 // Server-only exchange adapters. Read-only balance reads + spot market orders.
 // Never imported by client code: all access goes through server functions.
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
-export type Venue = "binance" | "bybit" | "okx";
+// Single source of truth for connectable venues — imported by the connect
+// schema and every UI touch point instead of each hand-duplicating its own
+// list. Kept in sync with the Postgres `exchange_venue` enum by
+// __tests__/exchange-venue-sync.test.ts.
+export const VENUES = ["binance", "bybit", "okx", "gateio", "kucoin", "mexc"] as const;
+export type Venue = (typeof VENUES)[number];
 
 export type Credentials = {
   apiKey: string;
@@ -55,12 +60,18 @@ const HOSTS: Record<Venue, string> = {
   binance: "https://api.binance.com",
   bybit: "https://api.bybit.com",
   okx: "https://www.okx.com",
+  gateio: "https://api.gateio.ws",
+  kucoin: "https://api.kucoin.com",
+  mexc: "https://api.mexc.com",
 };
 
 const hmacHex = (secret: string, payload: string) =>
   createHmac("sha256", secret).update(payload).digest("hex");
 const hmacB64 = (secret: string, payload: string) =>
   createHmac("sha256", secret).update(payload).digest("base64");
+const hmacHex512 = (secret: string, payload: string) =>
+  createHmac("sha512", secret).update(payload).digest("hex");
+const sha512Hex = (payload: string) => createHash("sha512").update(payload).digest("hex");
 
 const DUST = 1e-8;
 
@@ -128,10 +139,74 @@ async function okxBalances(c: Credentials): Promise<Balance[]> {
     .filter((b) => Number.isFinite(b.amount) && b.amount > DUST);
 }
 
+async function gateioBalances(c: Credentials): Promise<Balance[]> {
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const method = "GET";
+  const path = "/api/v4/spot/accounts";
+  const signString = `${method}\n${path}\n\n${sha512Hex("")}\n${ts}`;
+  const res = await fetch(`${HOSTS.gateio}${path}`, {
+    headers: {
+      KEY: c.apiKey,
+      Timestamp: ts,
+      SIGN: hmacHex512(c.apiSecret, signString),
+    },
+  });
+  const json = (await res.json()) as { currency?: string; available?: string; locked?: string; label?: string; message?: string }[] | { label?: string; message?: string };
+  if (!res.ok || !Array.isArray(json)) {
+    const err = json as { label?: string; message?: string };
+    throw new Error(err.message ?? err.label ?? `Account read rejected (${res.status})`);
+  }
+  return json
+    .map((b) => ({ symbol: (b.currency ?? "").toUpperCase(), amount: Number(b.available ?? 0) + Number(b.locked ?? 0) }))
+    .filter((b) => b.symbol && Number.isFinite(b.amount) && b.amount > DUST);
+}
+
+async function kucoinBalances(c: Credentials): Promise<Balance[]> {
+  const ts = Date.now().toString();
+  const method = "GET";
+  const path = "/api/v1/accounts";
+  const prehash = `${ts}${method}${path}`;
+  // API-Key-V2: the passphrase itself is HMAC-signed (not sent plain) —
+  // matches the "KC-API-KEY-VERSION: 2" requirement KuCoin's own docs call out.
+  const res = await fetch(`${HOSTS.kucoin}${path}`, {
+    headers: {
+      "KC-API-KEY": c.apiKey,
+      "KC-API-SIGN": hmacB64(c.apiSecret, prehash),
+      "KC-API-TIMESTAMP": ts,
+      "KC-API-PASSPHRASE": hmacB64(c.apiSecret, c.passphrase ?? ""),
+      "KC-API-KEY-VERSION": "2",
+    },
+  });
+  const json = (await res.json()) as { code?: string; msg?: string; data?: { currency: string; balance: string; holds: string; type: string }[] };
+  if (json.code !== "200000") throw new Error(json.msg || `Account read rejected (${res.status})`);
+  return (json.data ?? [])
+    .filter((d) => d.type === "trade")
+    .map((d) => ({ symbol: d.currency.toUpperCase(), amount: Number(d.balance) }))
+    .filter((b) => Number.isFinite(b.amount) && b.amount > DUST);
+}
+
+async function mexcBalances(c: Credentials): Promise<Balance[]> {
+  const query = `timestamp=${Date.now()}&recvWindow=10000`;
+  const url = `${HOSTS.mexc}/api/v3/account?${query}&signature=${hmacHex(c.apiSecret, query)}`;
+  const res = await fetch(url, { headers: { "X-MEXC-APIKEY": c.apiKey } });
+  const json = (await res.json()) as { balances?: { asset: string; free: string; locked: string }[]; msg?: string };
+  if (!res.ok) throw new Error(json.msg ?? `Account read rejected (${res.status})`);
+  return (json.balances ?? [])
+    .map((b) => ({ symbol: b.asset.toUpperCase(), amount: Number(b.free) + Number(b.locked) }))
+    .filter((b) => Number.isFinite(b.amount) && b.amount > DUST);
+}
+
+const BALANCE_FNS: Record<Venue, (c: Credentials) => Promise<Balance[]>> = {
+  binance: binanceBalances,
+  bybit: bybitBalances,
+  okx: okxBalances,
+  gateio: gateioBalances,
+  kucoin: kucoinBalances,
+  mexc: mexcBalances,
+};
+
 export async function fetchBalances(venue: Venue, c: Credentials): Promise<Balance[]> {
-  if (venue === "binance") return binanceBalances(c);
-  if (venue === "bybit") return bybitBalances(c);
-  return okxBalances(c);
+  return BALANCE_FNS[venue](c);
 }
 
 /* -------------------------------- orders -------------------------------- */
@@ -230,11 +305,44 @@ async function okxOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
   return { ok: true, orderId: json.data?.[0]?.ordId ?? "", raw: json };
 }
 
+async function mexcOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
+  const params = new URLSearchParams({
+    symbol: `${r.symbol}${r.stable}`,
+    side: r.side.toUpperCase(),
+    type: "MARKET",
+    newClientOrderId: r.clientOrderId,
+    timestamp: Date.now().toString(),
+    recvWindow: "10000",
+  });
+  if (r.side === "buy") params.set("quoteOrderQty", String(r.quoteUsd ?? 0));
+  else params.set("quantity", String(r.baseQty ?? 0));
+  const query = params.toString();
+  const res = await fetch(`${HOSTS.mexc}/api/v3/order?${query}&signature=${hmacHex(c.apiSecret, query)}`, {
+    method: "POST",
+    headers: { "X-MEXC-APIKEY": c.apiKey },
+  });
+  const json = (await res.json()) as { orderId?: string | number; msg?: string; code?: number };
+  if (!res.ok) {
+    // No independently-confirmed MEXC duplicate-clientOrderId error code —
+    // rely on the generic text match only, same safety net the other three
+    // venues fall back on.
+    return { ok: false, error: json.msg ?? `order rejected (${res.status})`, raw: json, isDuplicate: looksLikeDuplicate(json.msg) };
+  }
+  return { ok: true, orderId: String(json.orderId ?? ""), raw: json };
+}
+
+const ORDER_FNS: Partial<Record<Venue, (c: Credentials, r: OrderRequest) => Promise<OrderResult>>> = {
+  binance: binanceOrder,
+  bybit: bybitOrder,
+  okx: okxOrder,
+  mexc: mexcOrder,
+};
+
 export async function placeSpotOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
   try {
-    if (r.venue === "binance") return await binanceOrder(c, r);
-    if (r.venue === "bybit") return await bybitOrder(c, r);
-    return await okxOrder(c, r);
+    const fn = ORDER_FNS[r.venue];
+    if (!fn) return { ok: false, error: `${r.venue} is read-only in EliteFlux; connect Bybit, OKX or MEXC for Autopilot trading.` };
+    return await fn(c, r);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "order failed" };
   }

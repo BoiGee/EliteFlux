@@ -12,6 +12,7 @@ import { TopBar } from "@/components/eliteflux/TopBar";
 import { SiteFooter } from "@/components/eliteflux/SiteFooter";
 import { KeySafety } from "@/components/eliteflux/KeySafety";
 import { ConnectWizard } from "@/components/eliteflux/ConnectWizard";
+import { ConnectWalletWizard } from "@/components/eliteflux/ConnectWalletWizard";
 import { Term } from "@/components/eliteflux/Term";
 import { friendlyConnectError } from "@/lib/portfolio.schemas";
 import {
@@ -50,9 +51,14 @@ const VENUES = [
   { key: "binance", label: "Binance" },
   { key: "bybit", label: "Bybit" },
   { key: "okx", label: "OKX" },
+  { key: "gateio", label: "Gate.io" },
+  { key: "kucoin", label: "KuCoin" },
+  { key: "mexc", label: "MEXC" },
 ] as const;
 
 type Venue = (typeof VENUES)[number]["key"];
+
+const READ_ONLY_VENUES = new Set<Venue>(["gateio", "kucoin"]);
 
 const money = (n: number | null | undefined) =>
   n === null || n === undefined
@@ -100,9 +106,11 @@ function PortfolioPage() {
   const [address, setAddress] = useState("");
   const [noWithdrawAck, setNoWithdrawAck] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [walletWizardOpen, setWalletWizardOpen] = useState(false);
   const [expert, setExpert] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [rawError, setRawError] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
   const connectM = useMutation({
     mutationFn: (v?: {
@@ -116,7 +124,7 @@ function PortfolioPage() {
       return connect({
         data: {
           venue: p.venue,
-          permission: p.venue === "binance" ? "read_only" : p.permission,
+          permission: p.venue === "binance" || READ_ONLY_VENUES.has(p.venue) ? "read_only" : p.permission,
           apiKey: p.apiKey,
           apiSecret: p.apiSecret,
           ...(p.passphrase ? { passphrase: p.passphrase } : {}),
@@ -147,9 +155,14 @@ function PortfolioPage() {
 
 
   const walletM = useMutation({
-    mutationFn: () => wallet({ data: { chain, address: address.trim() } }),
+    mutationFn: (v?: { chain: "evm" | "solana"; address: string; label?: string }) => {
+      const p = v ?? { chain, address: address.trim() };
+      return wallet({ data: { chain: p.chain, address: p.address, ...(p.label ? { label: p.label } : {}) } });
+    },
     onSuccess: (r) => {
       setAddress("");
+      setWalletError(null);
+      setWalletWizardOpen(false);
       if (r.errors.length) {
         // syncPortfolio re-reads every connected source, not just the one just
         // added — an error here may belong to an existing wallet/exchange.
@@ -159,7 +172,10 @@ function PortfolioPage() {
       }
       invalidate();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      setWalletError(e.message);
+      toast.error(e.message);
+    },
   });
 
   const removeM = useMutation({
@@ -323,8 +339,8 @@ function PortfolioPage() {
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                The walkthrough takes you screen by screen on Binance, Bybit or OKX and ends with the boxes to paste
-                into — you never have to guess which button to press.
+                The walkthrough takes you screen by screen on any of Binance, Bybit, OKX, Gate.io, KuCoin or MEXC and
+                ends with the boxes to paste into — you never have to guess which button to press.
               </p>
             </div>
 
@@ -349,13 +365,15 @@ function PortfolioPage() {
               {(["read_only", "read_trade"] as const).map((p) => (
                 <button
                   key={p}
-                  disabled={(readonlyOnly || venue === "binance") && p === "read_trade"}
+                  disabled={(readonlyOnly || venue === "binance" || READ_ONLY_VENUES.has(venue)) && p === "read_trade"}
                   title={
                     readonlyOnly && p === "read_trade"
                       ? "Your account is locked to read-only keys."
                       : venue === "binance" && p === "read_trade"
-                        ? "Binance requires a whitelisted IP for trading-enabled keys, and EliteFlux has no fixed outbound IP to give it. Use Bybit or OKX for Autopilot instead."
-                        : undefined
+                        ? "Binance requires a whitelisted IP for trading-enabled keys, and EliteFlux has no fixed outbound IP to give it. Use Bybit, OKX or MEXC for Autopilot instead."
+                        : READ_ONLY_VENUES.has(venue) && p === "read_trade"
+                          ? "Trading isn't offered on this exchange yet. Use Bybit, OKX or MEXC for Autopilot instead."
+                          : undefined
                   }
                   onClick={() => setPermission(p)}
                   className={`py-2 rounded-lg text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -370,7 +388,13 @@ function PortfolioPage() {
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Binance won't allow trading permission on an unrestricted-IP key, and EliteFlux has no fixed outbound
                 IP to whitelist — so Binance connections here are read-only (tracking and coaching). For Autopilot to
-                place trades, connect Bybit or OKX instead.
+                place trades, connect Bybit, OKX or MEXC instead.
+              </p>
+            )}
+            {READ_ONLY_VENUES.has(venue) && (
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                EliteFlux only reads balances on {VENUES.find((v) => v.key === venue)?.label} today — there's no
+                trading integration for it yet. For Autopilot to place trades, connect Bybit, OKX or MEXC instead.
               </p>
             )}
 
@@ -380,7 +404,7 @@ function PortfolioPage() {
               <Input id="api-key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="off" />
               <Label htmlFor="api-secret">API secret</Label>
               <Input id="api-secret" type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} autoComplete="off" />
-              {venue === "okx" && (
+              {(venue === "okx" || venue === "kucoin") && (
                 <>
                   <Label htmlFor="passphrase">Passphrase</Label>
                   <Input id="passphrase" type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="off" />
@@ -470,6 +494,13 @@ function PortfolioPage() {
               never move funds from a wallet.
             </p>
 
+            <div className="rounded-lg bg-surface-2/40 p-3 space-y-2">
+              <p className="text-xs font-semibold">Never done this before?</p>
+              <Button size="sm" onClick={() => setWalletWizardOpen(true)}>
+                <Compass className="w-3.5 h-3.5 mr-1.5" /> Walk me through it
+              </Button>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {(["evm", "solana"] as const).map((c) => (
                 <button
@@ -494,7 +525,7 @@ function PortfolioPage() {
               />
             </div>
 
-            <Button className="w-full" variant="outline" disabled={walletM.isPending || address.trim().length < 26} onClick={() => walletM.mutate()}>
+            <Button className="w-full" variant="outline" disabled={walletM.isPending || address.trim().length < 26} onClick={() => walletM.mutate(undefined)}>
               <Plus className="w-4 h-4 mr-2" /> {walletM.isPending ? "Reading chain…" : "Track wallet"}
             </Button>
 
@@ -533,6 +564,17 @@ function PortfolioPage() {
           pending={connectM.isPending}
           errorText={connectError}
           onSubmit={(v) => connectM.mutate(v)}
+        />
+
+        <ConnectWalletWizard
+          open={walletWizardOpen}
+          onOpenChange={(v) => {
+            setWalletWizardOpen(v);
+            if (!v) setWalletError(null);
+          }}
+          pending={walletM.isPending}
+          errorText={walletError}
+          onSubmit={(v) => walletM.mutate({ chain: v.chain, address: v.address, label: v.label })}
         />
 
         <div className="text-center">

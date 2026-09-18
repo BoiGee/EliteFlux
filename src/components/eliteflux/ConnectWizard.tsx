@@ -6,12 +6,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Term } from "./Term";
+import { Steps } from "./Steps";
 import { setCoachPrefill } from "@/lib/coach-prefill";
 
-export type Venue = "binance" | "bybit" | "okx";
+export type Venue = "binance" | "bybit" | "okx" | "gateio" | "kucoin" | "mexc";
 export type Permission = "read_only" | "read_trade";
 
-const VENUE_LABEL: Record<Venue, string> = { binance: "Binance", bybit: "Bybit", okx: "OKX" };
+/** Venues with no order-placement integration — read-only here for a reason unrelated to Binance's IP constraint (see PERMS below). */
+const READ_ONLY_VENUES = new Set<Venue>(["gateio", "kucoin"]);
+
+const VENUE_LABEL: Record<Venue, string> = {
+  binance: "Binance",
+  bybit: "Bybit",
+  okx: "OKX",
+  gateio: "Gate.io",
+  kucoin: "KuCoin",
+  mexc: "MEXC",
+};
 
 const WHERE: Record<Venue, string[]> = {
   binance: [
@@ -29,6 +40,21 @@ const WHERE: Record<Venue, string[]> = {
     "Click your profile icon in the top right corner.",
     "Choose “API” and then the trading API section.",
   ],
+  gateio: [
+    "Open gate.io in a new tab and sign in as normal.",
+    "Click your profile icon in the top right corner.",
+    "Choose “API Management”.",
+  ],
+  kucoin: [
+    "Open kucoin.com in a new tab and sign in as normal.",
+    "Click your avatar in the top right corner.",
+    "Choose “API Management”.",
+  ],
+  mexc: [
+    "Open mexc.com in a new tab and sign in as normal.",
+    "Click your avatar in the top right corner.",
+    "Choose “API Management”.",
+  ],
 };
 
 const CREATE: Record<Venue, string[]> = {
@@ -45,6 +71,21 @@ const CREATE: Record<Venue, string[]> = {
   okx: [
     "Press “Create V5 API key”.",
     "Name it EliteFlux and choose a passphrase you write down — you will need it here.",
+    "Confirm with your security codes.",
+  ],
+  gateio: [
+    "Press “Create API Key”.",
+    "Name it EliteFlux so you know what it is for.",
+    "Confirm with your security codes.",
+  ],
+  kucoin: [
+    "Press “Create API”.",
+    "Name it EliteFlux and choose a passphrase you write down — you will need it here.",
+    "Confirm with your security codes.",
+  ],
+  mexc: [
+    "Press “Create API Key”.",
+    "Name it EliteFlux so you know what it is for.",
     "Confirm with your security codes.",
   ],
 };
@@ -65,6 +106,21 @@ const PERMS: Record<Venue, { on: string; trade: string; off: string }> = {
     on: "Choose the “Read” permission.",
     trade: "Add “Trade” only if you want Flux to place orders for you.",
     off: "Leave “Withdraw” unticked.",
+  },
+  gateio: {
+    on: "Choose “Read Only” permissions.",
+    trade: "EliteFlux only reads balances on Gate.io today — there is no trading option here, regardless of what you tick.",
+    off: "Never tick Withdraw.",
+  },
+  kucoin: {
+    on: "Choose “General” (read) permissions.",
+    trade: "EliteFlux only reads balances on KuCoin today — there is no trading option here, regardless of what you tick.",
+    off: "Never tick Transfer or Withdraw.",
+  },
+  mexc: {
+    on: "Choose “Read” permissions.",
+    trade: "Add “Spot Trading” only if you want Flux to place orders for you.",
+    off: "Never tick Withdraw.",
   },
 };
 
@@ -199,8 +255,14 @@ export function ConnectWizard({
                 {(["read_only", "read_trade"] as Permission[]).map((p) => (
                   <button
                     key={p}
-                    disabled={(readonlyOnly || venue === "binance") && p === "read_trade"}
-                    title={venue === "binance" && p === "read_trade" ? "Binance won't allow this combination — see above." : undefined}
+                    disabled={(readonlyOnly || venue === "binance" || READ_ONLY_VENUES.has(venue)) && p === "read_trade"}
+                    title={
+                      p === "read_trade" && venue === "binance"
+                        ? "Binance won't allow this combination — see above."
+                        : p === "read_trade" && READ_ONLY_VENUES.has(venue)
+                          ? "Trading isn't offered on this exchange yet — see above."
+                          : undefined
+                    }
                     onClick={() => setPermission(p)}
                     className={`py-2 rounded-lg text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
                       permission === p ? "bg-primary/20 ring-1 ring-primary" : "bg-surface-2/60 text-muted-foreground"
@@ -218,7 +280,7 @@ export function ConnectWizard({
               items={[
                 "Your exchange now shows two long codes: the key and the secret.",
                 "Copy both into a safe place right now — the secret is shown only once.",
-                venue === "okx"
+                venue === "okx" || venue === "kucoin"
                   ? "You also need the passphrase you chose a moment ago."
                   : "There is no passphrase on this exchange — key and secret are enough.",
                 "Lost the secret already? No problem: delete that key and create a fresh one.",
@@ -243,7 +305,7 @@ export function ConnectWizard({
                 onChange={(e) => setApiSecret(e.target.value)}
                 autoComplete="off"
               />
-              {venue === "okx" && (
+              {(venue === "okx" || venue === "kucoin") && (
                 <>
                   <Label htmlFor="w-pass">
                     <Term word="passphrase">Passphrase</Term>
@@ -302,7 +364,7 @@ export function ConnectWizard({
                 onClick={() =>
                   onSubmit({
                     venue,
-                    permission: readonlyOnly || venue === "binance" ? "read_only" : permission,
+                    permission: readonlyOnly || venue === "binance" || READ_ONLY_VENUES.has(venue) ? "read_only" : permission,
                     apiKey: apiKey.trim(),
                     apiSecret: apiSecret.trim(),
                     passphrase: passphrase.trim(),
@@ -316,20 +378,5 @@ export function ConnectWizard({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Steps({ items, note }: { items: string[]; note?: string }) {
-  return (
-    <>
-      <ol className="space-y-2 list-decimal list-inside">
-        {items.map((s) => (
-          <li key={s} className="text-xs text-muted-foreground leading-relaxed">
-            {s}
-          </li>
-        ))}
-      </ol>
-      {note && <p className="text-[11px] text-muted-foreground/80 leading-relaxed pt-1">{note}</p>}
-    </>
   );
 }
