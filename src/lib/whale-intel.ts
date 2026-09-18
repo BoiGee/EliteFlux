@@ -47,69 +47,86 @@ export type HistoryMap = Record<string, SymbolHistorySample[]>;
 
 const clamp = (n: number, min = 0, max = 100) => Math.max(min, Math.min(max, n));
 
-export function computeWhaleIntel(snapshot: MarketSnapshot, history: HistoryMap): WhaleIntel {
-  const signals: WhaleAssetSignal[] = [];
+function scoreCoin(coin: { symbol: string; name: string }, history: HistoryMap): WhaleAssetSignal | null {
+  const hist = history[coin.symbol] ?? [];
+  if (hist.length < 4) return null;
 
-  for (const coin of snapshot.coinIntel) {
-    const hist = history[coin.symbol] ?? [];
-    if (hist.length < 4) continue;
+  const recent = hist.slice(-3);
+  const baseline = hist.slice(0, -3);
+  if (baseline.length < 2) return null;
 
-    const recent = hist.slice(-3);
-    const baseline = hist.slice(0, -3);
-    if (baseline.length < 2) continue;
+  const avgBaseVol = baseline.reduce((s, x) => s + x.quoteVolume, 0) / baseline.length || 1;
+  const avgRecentVol = recent.reduce((s, x) => s + x.quoteVolume, 0) / recent.length;
+  const volumeSpike = avgRecentVol / avgBaseVol;
 
-    const avgBaseVol = baseline.reduce((s, x) => s + x.quoteVolume, 0) / baseline.length || 1;
-    const avgRecentVol = recent.reduce((s, x) => s + x.quoteVolume, 0) / recent.length;
-    const volumeSpike = avgRecentVol / avgBaseVol;
+  const firstPrice = recent[0].price;
+  const lastPrice = recent[recent.length - 1].price;
+  const priceImpact = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
 
-    const firstPrice = recent[0].price;
-    const lastPrice = recent[recent.length - 1].price;
-    const priceImpact = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+  const baseVolStd = Math.sqrt(
+    baseline.reduce((s, x) => s + Math.pow(x.quoteVolume - avgBaseVol, 2), 0) / baseline.length,
+  );
+  const liquidityShift = clamp(baseVolStd / Math.max(avgBaseVol, 1), 0, 2) / 2;
 
-    const baseVolStd = Math.sqrt(
-      baseline.reduce((s, x) => s + Math.pow(x.quoteVolume - avgBaseVol, 2), 0) / baseline.length,
-    );
-    const liquidityShift = clamp(baseVolStd / Math.max(avgBaseVol, 1), 0, 2) / 2;
+  // Score weights: volume spike dominant, then price impact, then liquidity shift
+  const spikeScore = clamp((volumeSpike - 1) * 60, 0, 70);
+  const impactScore = clamp(Math.abs(priceImpact) * 8, 0, 60);
+  const shiftScore = liquidityShift * 30;
+  const score = Math.round(clamp(spikeScore * 0.55 + impactScore * 0.3 + shiftScore * 0.15));
 
-    // Score weights: volume spike dominant, then price impact, then liquidity shift
-    const spikeScore = clamp((volumeSpike - 1) * 60, 0, 70);
-    const impactScore = clamp(Math.abs(priceImpact) * 8, 0, 60);
-    const shiftScore = liquidityShift * 30;
-    const score = Math.round(clamp(spikeScore * 0.55 + impactScore * 0.3 + shiftScore * 0.15));
+  if (score < 18) return null;
 
-    if (score < 18) continue;
+  const phase: WhalePhase =
+    priceImpact > 0.25 && volumeSpike > 1.15
+      ? "Accumulation"
+      : priceImpact < -0.25 && volumeSpike > 1.15
+        ? "Distribution"
+        : "Neutral";
 
-    const phase: WhalePhase =
-      priceImpact > 0.25 && volumeSpike > 1.15
-        ? "Accumulation"
-        : priceImpact < -0.25 && volumeSpike > 1.15
-          ? "Distribution"
-          : "Neutral";
+  const impact: WhaleImpact = score > 70 ? "High" : score > 40 ? "Medium" : "Low";
 
-    const impact: WhaleImpact = score > 70 ? "High" : score > 40 ? "Medium" : "Low";
+  const reason =
+    phase === "Accumulation"
+      ? `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with price impulse +${priceImpact.toFixed(2)}%`
+      : phase === "Distribution"
+        ? `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with price drop ${priceImpact.toFixed(2)}%`
+        : `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with sideways price action`;
 
-    const reason =
-      phase === "Accumulation"
-        ? `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with price impulse +${priceImpact.toFixed(2)}%`
-        : phase === "Distribution"
-          ? `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with price drop ${priceImpact.toFixed(2)}%`
-          : `Volume +${((volumeSpike - 1) * 100).toFixed(0)}% with sideways price action`;
+  return {
+    symbol: coin.symbol,
+    name: coin.name,
+    phase,
+    impact,
+    volumeSpike: +volumeSpike.toFixed(2),
+    priceImpact: +priceImpact.toFixed(2),
+    liquidityShift: +liquidityShift.toFixed(2),
+    score,
+    reason,
+  };
+}
 
-    signals.push({
-      symbol: coin.symbol,
-      name: coin.name,
-      phase,
-      impact,
-      volumeSpike: +volumeSpike.toFixed(2),
-      priceImpact: +priceImpact.toFixed(2),
-      liquidityShift: +liquidityShift.toFixed(2),
-      score,
-      reason,
-    });
-  }
+/**
+ * `extraSymbols` widens `topSignals` (and therefore what gets logged for
+ * Flux's own accuracy learning) beyond the curated flagship list — e.g. the
+ * ~300-coin baseline universe. It deliberately does NOT touch `score`,
+ * `phase`, `impact`, `accumulating` or `distributing`: those numbers already
+ * feed eliteFluxScore, Recommendations, and weeks of calibrated weights, and
+ * letting a thin-book spike on an unfamiliar coin swing them would silently
+ * redefine what those trained weights were tuned against. Omitting
+ * `extraSymbols` reproduces prior behavior exactly.
+ */
+export function computeWhaleIntel(
+  snapshot: MarketSnapshot,
+  history: HistoryMap,
+  extraSymbols: { symbol: string; name?: string }[] = [],
+): WhaleIntel {
+  const curatedSymbols = new Set(snapshot.coinIntel.map((c) => c.symbol));
+
+  const signals = snapshot.coinIntel
+    .map((coin) => scoreCoin(coin, history))
+    .filter((s): s is WhaleAssetSignal => !!s);
 
   signals.sort((a, b) => b.score - a.score);
-  const topSignals = signals.slice(0, 6);
 
   const accumulating = signals.filter((s) => s.phase === "Accumulation").length;
   const distributing = signals.filter((s) => s.phase === "Distribution").length;
@@ -126,6 +143,13 @@ export function computeWhaleIntel(snapshot: MarketSnapshot, history: HistoryMap)
         : "Neutral";
 
   const impact: WhaleImpact = globalScore > 70 ? "High" : globalScore > 40 ? "Medium" : "Low";
+
+  const extraSignals = extraSymbols
+    .filter((e) => !curatedSymbols.has(e.symbol))
+    .map((e) => scoreCoin({ symbol: e.symbol, name: e.name ?? e.symbol }, history))
+    .filter((s): s is WhaleAssetSignal => !!s);
+
+  const topSignals = [...signals, ...extraSignals].sort((a, b) => b.score - a.score).slice(0, 6);
 
   return {
     score: globalScore,

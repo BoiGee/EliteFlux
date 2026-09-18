@@ -98,7 +98,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "whale",
     title: "Whale Activity",
     where: "Dashboard, Whale tab",
-    what: "Flags coordinated volume-and-price patterns consistent with large-player buying or selling, and labels the phase: accumulating, distributing or quiet. This reads exchange price/volume patterns, not wallet addresses — for direct on-chain wallet tracking see the separate On-Chain feature.",
+    what: "Flags coordinated volume-and-price patterns consistent with large-player buying or selling, and labels the phase: accumulating, distributing or quiet. This reads exchange price/volume patterns, not wallet addresses — for direct on-chain wallet tracking see the separate On-Chain feature. The overall market score weighs the highest-volume few hundred coins, not only the ones with their own tab here.",
     eli5: "It watches for the market's footprints of big spenders moving — not the spenders themselves.",
     plan: "elite",
     keywords: ["whale", "big players", "accumulation", "distribution"],
@@ -170,7 +170,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "volatility-regime",
     title: "Volatility regime",
     where: "Feeds Coin Intel",
-    what: "Ranks how tightly or wildly an asset is trading right now against its own recent history. A compressed (quiet) reading has historically preceded bigger moves; an expanded (already wild) reading is a chase-risk warning.",
+    what: "Ranks how tightly or wildly an asset is trading right now against its own recent history. A compressed (quiet) reading has historically preceded bigger moves; an expanded (already wild) reading is a chase-risk warning. Tracked for a few hundred coins by trading volume, not only the ones shown in Coin Intel.",
     eli5: "A coiled spring or an already-sprung one — this tells you which kind you're looking at.",
     plan: "pro",
     keywords: ["volatility", "compression", "expansion", "regime", "range"],
@@ -518,6 +518,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-09-18",
+    title: "Whale Activity and Volatility now read a few hundred coins, not just the flagship list",
+    detail:
+      "Whale Activity's overall market score and the Volatility regime read now weigh the highest-volume few hundred coins by trading activity, not only the flagship coins shown in their own tabs. A loud move on a coin outside that flagship list can now move the overall Whale score and gets logged so Flux's own accuracy tracking learns from more of the market. The flagship list is still the only place you get a full per-coin breakdown, order book depth, and on-chain flow.",
+  },
   {
     date: "2026-08-20",
     title: "Binance no longer offered for Autopilot trading — read-only only",

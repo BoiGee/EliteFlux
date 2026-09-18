@@ -60,6 +60,11 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
     for (const [symbol, p] of Object.entries(metrics.priceBySymbol)) {
       coins[symbol] = { price: p.price, change24h: p.change24h, quoteVolume: brainResult.volumes[symbol] ?? 0 };
     }
+    // Widens market_snapshots (and therefore future runs' observed history)
+    // to the ~300-coin baseline universe, beyond the curated flagship list.
+    for (const [symbol, t] of Object.entries(brainResult.baselineTickers)) {
+      coins[symbol] = { price: t.price, change24h: t.change24h, quoteVolume: t.quoteVolume };
+    }
     await persistSnapshot(admin, {
       flux_score: metrics.fluxScore,
       regime: metrics.regime,
@@ -78,7 +83,11 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
         await import("./signal-tracking.server");
 
       learning.recorded = await recordSignalEvents(admin as never, buildSignalEvents(brainResult));
-      const r = await resolveSignalOutcomes(admin as never, metrics.priceBySymbol);
+      // Signal events can now be recorded for coins outside the curated
+      // flagship list (widened whale topSignals) — without a matching price
+      // here, those events would never be able to resolve.
+      const resolvePrices: Record<string, { price: number }> = { ...metrics.priceBySymbol, ...brainResult.baselineTickers };
+      const r = await resolveSignalOutcomes(admin as never, resolvePrices);
       learning.resolved = r.resolved;
       learning.closed = r.closed;
 

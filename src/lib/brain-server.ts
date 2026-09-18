@@ -1,4 +1,5 @@
 import { COIN_UNIVERSE, deriveSnapshot, type MarketSnapshot, type SentimentLabel, type Ticker } from "./market";
+import type { BaselineUniverseResult } from "./baseline-universe.server";
 import { computeWhaleIntel, type HistoryMap, type WhaleIntel } from "./whale-intel";
 import { computeSentimentIntel, type SentimentIntel } from "./sentiment-intel";
 import { runEliteBrain } from "./elite-brain";
@@ -329,6 +330,8 @@ export interface BrainServerResult {
   crowd: CrowdIntel;
   /** Latest 24h quote volume per symbol — persisted so future runs get real history. */
   volumes: Record<string, number>;
+  /** Top ~300 coins by traded volume, short-symbol-keyed, excluding anything already in COIN_UNIVERSE. Empty when the baseline fetch failed this cycle. */
+  baselineTickers: Record<string, Ticker>;
   /** True when the engines scored against persisted history, not a synthesized one. */
   historySource: "persisted" | "synthesized";
   /** Which venue served the prices behind this snapshot. */
@@ -368,6 +371,8 @@ export interface UpstreamMarketData {
   fng: Awaited<ReturnType<typeof fetchFng>>;
   /** Which venue actually served the prices on this read. */
   tickerSource: TickerSource;
+  /** Top ~300 coins by traded volume, beyond the curated COIN_UNIVERSE. Best-effort — null on failure. */
+  baseline: BaselineUniverseResult | null;
 
   fetchedAt: number;
 }
@@ -382,7 +387,8 @@ export async function getUpstreamMarketData(): Promise<UpstreamMarketData> {
   // Long TTL + long stale window: page views must never translate into
   // upstream calls, which is what got our backend rate-limited.
   return cached("upstream-market", { ttlMs: 60_000, staleMs: 15 * 60_000 }, async () => {
-    const [tickerRead, global, fng] = await Promise.all([loadTickers(), fetchGlobal(), fetchFng()]);
+    const { fetchBaselineUniverse } = await import("./baseline-universe.server");
+    const [tickerRead, global, fng, baseline] = await Promise.all([loadTickers(), fetchGlobal(), fetchFng(), fetchBaselineUniverse()]);
 
     // Keep a durable last-good reading so a total provider outage degrades
     // into stale prices instead of a dead dashboard.
@@ -402,7 +408,7 @@ export async function getUpstreamMarketData(): Promise<UpstreamMarketData> {
       }
     }
 
-    return { ...tickerRead, global, fng, fetchedAt: Date.now() };
+    return { ...tickerRead, global, fng, baseline, fetchedAt: Date.now() };
   });
 }
 
@@ -438,11 +444,37 @@ const NEUTRAL_MACRO: MacroIntel = {
  * it's cached separately with a longer TTL and shares one fetch across every
  * visitor and cron run, same as getUpstreamMarketData above.
  */
-export async function getExtendedMarketData(snapshot: MarketSnapshot, tickers: Record<string, Ticker>): Promise<ExtendedMarketData> {
+export async function getExtendedMarketData(
+  snapshot: MarketSnapshot,
+  tickers: Record<string, Ticker>,
+  baseline: BaselineUniverseResult | null = null,
+): Promise<ExtendedMarketData> {
   const { cached } = await import("./ttl-cache.server");
   return cached("extended-market", { ttlMs: 90_000, staleMs: 30 * 60_000 }, async () => {
+    // Order book depth and derivatives open interest cost one HTTP request
+    // PER symbol (see fetchOrderBookData/fetchDerivativesData) — these stay
+    // scoped to the curated flagship list. Widening them to the ~300-coin
+    // baseline would multiply Cloudflare Workers subrequests and exchange
+    // rate-limit weight per cron cycle for no product benefit (nothing shows
+    // order-book/derivatives depth for coins outside the flagship dashboard).
     const binanceSymbols = COIN_UNIVERSE.filter((c) => c.binance).map((c) => c.binance!);
     const ethPrice = snapshot.coinIntel.find((c) => c.symbol === "ETH")?.price;
+
+    // Volatility is pure in-memory computation (no extra fetch per symbol),
+    // so it's cheap to widen to the baseline set. Curated reading wins on any
+    // overlap (spread order below), and baseline entries already covered by
+    // COIN_UNIVERSE are dropped rather than scored twice.
+    const curatedSymbols = new Set(COIN_UNIVERSE.map((c) => c.symbol));
+    const volatilityTickers = baseline ? { ...baseline.tickers, ...tickers } : tickers;
+    const volatilitySymbols: { symbol: string; binance?: string }[] = baseline
+      ? [
+          ...COIN_UNIVERSE,
+          ...baseline.symbols
+            .filter((p) => p.endsWith("USDT"))
+            .map((p) => ({ symbol: p.slice(0, -4), binance: p }))
+            .filter((s) => !curatedSymbols.has(s.symbol)),
+        ]
+      : COIN_UNIVERSE;
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -490,7 +522,7 @@ export async function getExtendedMarketData(snapshot: MarketSnapshot, tickers: R
         logged("fetchOkxPrices", fetchOkxPrices(), null),
         logged(
           "getVolatilityIntel",
-          getVolatilityIntel(supabaseAdmin as never, tickers, COIN_UNIVERSE),
+          getVolatilityIntel(supabaseAdmin as never, volatilityTickers, volatilitySymbols),
           { perAsset: {}, generatedAt: Date.now() } as VolatilityIntel,
         ),
         logged(
@@ -533,9 +565,22 @@ export async function getBrainSnapshotCached(): Promise<BrainServerResult> {
 }
 
 export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
-  const { tickers, global, fng, tickerSource, fetchedAt: tickersFetchedAt } = await getUpstreamMarketData();
+  const { tickers, global, fng, tickerSource, baseline, fetchedAt: tickersFetchedAt } = await getUpstreamMarketData();
   const snapshot = deriveSnapshot(tickers, global, global, fng);
 
+  // Short-symbol-keyed (e.g. "SOMECOIN", not "SOMECOINUSDT") so it lines up
+  // with how COIN_UNIVERSE and market_snapshots.coins are already keyed.
+  // Coins already in COIN_UNIVERSE keep their curated ticker, not this one.
+  const curatedSymbols = new Set(snapshot.coinIntel.map((c) => c.symbol));
+  const baselineTickers: Record<string, Ticker> = {};
+  if (baseline) {
+    for (const [pair, t] of Object.entries(baseline.tickers)) {
+      if (!pair.endsWith("USDT")) continue;
+      const symbol = pair.slice(0, -4);
+      if (curatedSymbols.has(symbol)) continue;
+      baselineTickers[symbol] = t;
+    }
+  }
 
   // Prefer real observed history from the rolling snapshot table; fall back to
   // the synthesized path when there isn't enough of it yet (cold start).
@@ -550,6 +595,10 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
         const t = tickers[`${c.symbol}USDT`];
         if (!t) continue;
         const series = (persisted[c.symbol] ??= []);
+        series.push({ ts: now, price: t.price, quoteVolume: t.quoteVolume });
+      }
+      for (const [symbol, t] of Object.entries(baselineTickers)) {
+        const series = (persisted[symbol] ??= []);
         series.push({ ts: now, price: t.price, quoteVolume: t.quoteVolume });
       }
       history = persisted;
@@ -631,13 +680,14 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
   let onchain: ReturnType<typeof computeOnChainIntel>;
   let exit: ReturnType<typeof computeExitIntel>;
   try {
-    whale = computeWhaleIntel(snapshot, history);
+    const extraWhaleSymbols = Object.keys(baselineTickers).map((symbol) => ({ symbol }));
+    whale = computeWhaleIntel(snapshot, history, extraWhaleSymbols);
     sentiment = computeSentimentIntel(snapshot, history, prevSentimentScore, fng?.score ?? null);
     brain = runEliteBrain(snapshot, whale, sentiment, eliteBrainWeights);
     smartMoney = computeSmartMoney(whale);
     pressure = computePumpPressure(snapshot, whale, sentiment, narrative, ignition, smartMoney);
     brainV3 = runEliteBrainV3(snapshot, whale, sentiment, narrative, ignition, smartMoney, pressure);
-    extended = await getExtendedMarketData(snapshot, tickers);
+    extended = await getExtendedMarketData(snapshot, tickers, baseline);
     onchain = computeOnChainIntel(snapshot, history, whale, sentiment, narrative, pressure, extended.onchainReal);
     exit = computeExitIntel(snapshot, history, whale, sentiment, narrative, pressure, onchain);
   } catch (e) {
@@ -702,6 +752,7 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
     communityTrust: extended.communityTrust,
     crowd: extended.crowd,
     volumes,
+    baselineTickers,
     historySource,
     tickerSource,
     confidence,
@@ -715,7 +766,7 @@ export async function getBrainServerSnapshot(): Promise<BrainServerResult> {
  * Market-wide layers are stored against BTC as the market proxy.
  */
 export function buildSignalEvents(r: BrainServerResult): SignalEventInput[] {
-  const priceOf = (sym: string) => r.snapshot.coinIntel.find((c) => c.symbol === sym)?.price ?? null;
+  const priceOf = (sym: string) => r.snapshot.coinIntel.find((c) => c.symbol === sym)?.price ?? r.baselineTickers[sym]?.price ?? null;
   const btc = priceOf("BTC");
   const regime = r.brain.regime;
   const conf = r.confidence.score;

@@ -66,8 +66,18 @@ export async function getVolatilityIntel(
 
   const perAsset: VolatilityIntel["perAsset"] = {};
   try {
+    if (!readings.length) return { perAsset, generatedAt: now };
     const since = new Date(now - LOOKBACK_DAYS * 86400_000).toISOString();
-    const { data } = await admin.from("volatility_history").select("symbol,range_pct").gte("captured_at", since).limit(5000);
+    // Scoped to just this cycle's symbols — an unscoped query here would let
+    // whichever symbols happen to sort first in an unordered scan crowd out
+    // everyone else's history once the table holds many more symbols than fit
+    // in one page.
+    const { data } = await admin
+      .from("volatility_history")
+      .select("symbol,range_pct")
+      .in("symbol", readings.map((r) => r.symbol))
+      .gte("captured_at", since)
+      .limit(5000);
     const historyRows = (data ?? []) as { symbol: string; range_pct: number }[];
 
     const bySymbol = new Map<string, number[]>();
