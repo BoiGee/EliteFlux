@@ -14,11 +14,22 @@ function secretKey(): string {
   return key;
 }
 
+// No timeout here previously could hang checkout/settlement indefinitely —
+// runSettlePaymentsJob (jobs.server.ts) loops sequentially over pending
+// payments, calling this for each one, so a single stalled Paystack response
+// would stall the whole settlement cron the same way an unprotected fetch
+// stalled evaluate-alerts earlier this session.
+function timedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function paystackFetch<T>(
   path: string,
   init?: { method?: string; body?: unknown },
 ): Promise<{ ok: boolean; data?: T; message?: string }> {
-  const res = await fetch(`${PAYSTACK_API}${path}`, {
+  const res = await timedFetch(`${PAYSTACK_API}${path}`, {
     method: init?.method ?? "GET",
     headers: {
       Authorization: `Bearer ${secretKey()}`,
@@ -48,7 +59,7 @@ const PLAN_REFRESH_MS = 30 * 24 * 3600_000;
  * charged, so a failed lookup should block checkout, not silently mis-price it.
  */
 export async function fetchUsdToGhsRate(): Promise<number> {
-  const res = await fetch("https://open.er-api.com/v6/latest/USD");
+  const res = await timedFetch("https://open.er-api.com/v6/latest/USD");
   if (!res.ok) throw new Error(`Exchange rate lookup failed (${res.status})`);
   const json = (await res.json().catch(() => null)) as { result?: string; rates?: Record<string, number> } | null;
   const rate = json?.result === "success" ? json.rates?.["GHS"] : undefined;

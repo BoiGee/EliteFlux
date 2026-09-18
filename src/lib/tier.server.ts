@@ -19,7 +19,15 @@ function publishableClient(accessToken?: string) {
         }
         if (accessToken) h.set("Authorization", `Bearer ${accessToken}`);
         h.set("apikey", key);
-        return fetch(input, { ...init, headers: h });
+        // This client resolves the caller on every authenticated request
+        // (requireTier is the gate in front of every tier-restricted route) —
+        // a second, previously-unfixed instance of the same gap closed in
+        // client.server.ts's admin client: supabase-js's default fetch has no
+        // timeout, so a stalled auth/subscription lookup here would hang
+        // every gated request indefinitely instead of just one background job.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15_000);
+        return fetch(input, { ...init, headers: h, signal: controller.signal }).finally(() => clearTimeout(timer));
       },
     },
   });

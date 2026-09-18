@@ -626,11 +626,17 @@ export const runBackgroundJob = createServerFn({ method: "POST" })
     const origin = new URL(req.url).origin;
 
     try {
+      // Bounded so a stuck downstream job (this can trigger the very cron
+      // jobs that were hanging earlier — see jobs.server.ts) fails the admin
+      // request with a clear message instead of hanging it indefinitely.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60_000);
       const res = await fetch(`${origin}/api/public/${data.job}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: key },
         body: "{}",
-      });
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
       const body = await res.text();
       await writeAudit(supabaseAdmin as never, {
         actorId: context.userId,

@@ -295,7 +295,13 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
             reference_price: o.price,
           })),
         );
-        const { activeAutopilotUsers, runAutopilotForUser } = await import("./autopilot.server");
+        const { activeAutopilotUsers, runAutopilotForUser, reconcileStuckAutopilotActions } = await import("./autopilot.server");
+        // Global sweep, once per cycle, before the per-user loop below — not
+        // per-user, since a stuck row can outlive the run that caused it.
+        // See reconcileStuckAutopilotActions's own comment for why this
+        // exists: a timed-out run can abandon a claimed action mid-flight,
+        // leaving it invisible to daily-guardrail counting indefinitely.
+        await reconcileStuckAutopilotActions(admin as never).catch((e) => console.error("reconcile stuck autopilot actions failed", e));
         const users = await activeAutopilotUsers(admin as never);
         autopilot.users = users.length;
         const CONCURRENCY = 5;
@@ -357,6 +363,21 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       if (!alerts.length) break;
       evaluated += alerts.length;
 
+      // Previously one insert() + one update() per fired alert, sequentially
+      // awaited — same anti-pattern as gradeDueCalls (already fixed
+      // elsewhere), except this one is inside the exact job that hung for
+      // 10-15+ minutes earlier this session. A volatile market tick firing
+      // many alerts at once used to scale both subrequest count and wall
+      // time linearly with fires; now it's two batched writes per page
+      // regardless of how many fired.
+      const toInsert: { alert_id: string; user_id: string; fired_at: string; payload: Record<string, unknown> }[] = [];
+      const firedAlertIds: string[] = [];
+      const pending: {
+        alert: Record<string, unknown> & { id: string; user_id: string; name: string; channels?: string[] };
+        payload: Record<string, unknown>;
+        message: string;
+      }[] = [];
+
       for (const raw of alerts) {
         const alert = raw as unknown as Record<string, unknown> & {
           id: string;
@@ -379,28 +400,33 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
           ...(result.detail ?? {}),
         };
 
-        const { data: inserted, error: insErr } = await admin
-          .from("alert_history")
-          .insert({ alert_id: alert.id, user_id: alert.user_id, fired_at: nowIso, payload })
-          .select("id")
-          .maybeSingle();
+        toInsert.push({ alert_id: alert.id, user_id: alert.user_id, fired_at: nowIso, payload });
+        firedAlertIds.push(alert.id);
+        pending.push({ alert, payload, message: result.message ?? "Condition met." });
+      }
+
+      if (toInsert.length) {
+        const { data: inserted, error: insErr } = await admin.from("alert_history").insert(toInsert).select("id,alert_id");
         if (insErr) {
           errors++;
-          continue;
+        } else {
+          const historyIdByAlert = new Map(
+            ((inserted ?? []) as { id: string; alert_id: string }[]).map((r) => [r.alert_id, r.id]),
+          );
+          await admin.from("alerts").update({ last_triggered_at: nowIso }).in("id", firedAlertIds);
+          fired += pending.length;
+          for (const p of pending) {
+            firedItems.push({
+              userId: p.alert.user_id,
+              alertId: p.alert.id,
+              historyId: historyIdByAlert.get(p.alert.id) ?? null,
+              channels: ((p.alert.channels as never) ?? ["in_app"]) as never,
+              title: p.alert.name,
+              message: p.message,
+              payload: p.payload,
+            });
+          }
         }
-
-        await admin.from("alerts").update({ last_triggered_at: nowIso }).eq("id", alert.id);
-        fired++;
-
-        firedItems.push({
-          userId: alert.user_id,
-          alertId: alert.id,
-          historyId: inserted?.id ?? null,
-          channels: ((alert.channels as never) ?? ["in_app"]) as never,
-          title: alert.name,
-          message: result.message ?? "Condition met.",
-          payload,
-        });
       }
 
       if (alerts.length < PAGE) break;
@@ -462,13 +488,16 @@ export async function runExpireSubsJob(admin: Admin): Promise<ExpireSubsResult> 
 
     checked = expired?.length ?? 0;
 
-    for (const sub of expired ?? []) {
-      const { error } = await admin
-        .from("subscriptions")
-        .update({ status: "expired", tier: "free", updated_at: now })
-        .eq("id", (sub as { id: string }).id);
+    // Every expired row gets the identical update, so this is a single
+    // batched write (.in) instead of one .update() per row — same anti-
+    // pattern already fixed elsewhere (gradeDueCalls, the alert-firing
+    // loops), and every subrequest here is one this job's budget doesn't
+    // need to spend N times over.
+    if (checked > 0) {
+      const ids = (expired ?? []).map((sub: { id: string }) => sub.id);
+      const { error } = await admin.from("subscriptions").update({ status: "expired", tier: "free", updated_at: now }).in("id", ids);
       if (error) errors++;
-      else downgraded++;
+      else downgraded = checked;
     }
 
     await finishRun(admin, run, {
@@ -615,6 +644,16 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
     let deferredToMainCycle = 0;
     const firedItems: import("./alert-delivery.server").FiredAlertItem[] = [];
 
+    // Same batching fix as runEvaluateAlertsJob's alert loop — one insert +
+    // one update per page instead of one pair per fired alert.
+    const toInsert: { alert_id: string; user_id: string; fired_at: string; payload: Record<string, unknown> }[] = [];
+    const firedAlertIds: string[] = [];
+    const pending: {
+      alert: Record<string, unknown> & { id: string; user_id: string; name: string; channels?: string[] };
+      payload: Record<string, unknown>;
+      message: string;
+    }[] = [];
+
     for (const raw of alertRows ?? []) {
       const alert = raw as unknown as Record<string, unknown> & {
         id: string;
@@ -642,27 +681,31 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
         ...(result.detail ?? {}),
       };
 
-      const { data: inserted, error: insErr } = await admin
-        .from("alert_history")
-        .insert({ alert_id: alert.id, user_id: alert.user_id, fired_at: nowIso, payload })
-        .select("id")
-        .maybeSingle();
+      toInsert.push({ alert_id: alert.id, user_id: alert.user_id, fired_at: nowIso, payload });
+      firedAlertIds.push(alert.id);
+      pending.push({ alert, payload, message: result.message ?? "Condition met." });
+    }
+
+    if (toInsert.length) {
+      const { data: inserted, error: insErr } = await admin.from("alert_history").insert(toInsert).select("id,alert_id");
       if (insErr) {
         errors++;
-        continue;
+      } else {
+        const historyIdByAlert = new Map(((inserted ?? []) as { id: string; alert_id: string }[]).map((r) => [r.alert_id, r.id]));
+        await admin.from("alerts").update({ last_triggered_at: nowIso }).in("id", firedAlertIds);
+        fired += pending.length;
+        for (const p of pending) {
+          firedItems.push({
+            userId: p.alert.user_id,
+            alertId: p.alert.id,
+            historyId: historyIdByAlert.get(p.alert.id) ?? null,
+            channels: ((p.alert.channels as never) ?? ["in_app"]) as never,
+            title: p.alert.name,
+            message: p.message,
+            payload: p.payload,
+          });
+        }
       }
-      await admin.from("alerts").update({ last_triggered_at: nowIso }).eq("id", alert.id);
-      fired++;
-
-      firedItems.push({
-        userId: alert.user_id,
-        alertId: alert.id,
-        historyId: inserted?.id ?? null,
-        channels: ((alert.channels as never) ?? ["in_app"]) as never,
-        title: alert.name,
-        message: result.message ?? "Condition met.",
-        payload,
-      });
     }
 
     mark(`alert loop done (evaluated=${evaluated}, fired=${fired})`);
