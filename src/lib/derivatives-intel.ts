@@ -88,8 +88,14 @@ export async function fetchDerivativesData(binanceSymbols: string[]): Promise<Ra
   }
   if (!funding.size) return null;
 
-  // Capped rather than all-at-once — see concurrency.server.ts for why.
-  await mapWithConcurrency(binanceSymbols, 5, async (sym) => {
+  // Capped rather than all-at-once — see concurrency.server.ts for why. Kept
+  // low (not just "capped") because this runs concurrently with
+  // orderbook-intel's own 3-wide fan-out to the same host inside
+  // brain-server.ts's wider Promise.all — the sum of simultaneously in-flight
+  // requests across every extended-market-data branch is what trips
+  // Cloudflare's "stalled HTTP response canceled to prevent deadlock"
+  // protection, confirmed live via wrangler tail.
+  await mapWithConcurrency(binanceSymbols, 3, async (sym) => {
     try {
       const res = await futuresFetch(`${FUTURES_REST}/openInterest?symbol=${sym}`);
       if (!res.ok) return;

@@ -48,8 +48,14 @@ function depthFetch(url: string): Promise<Response> {
 
 export type RawOrderBookData = Map<string, RawDepth>;
 
-// Capped rather than all-at-once — see concurrency.server.ts for why.
-const MAX_CONCURRENT_REQUESTS = 5;
+// Capped rather than all-at-once — see concurrency.server.ts for why. Kept
+// low (not just "capped") because this runs concurrently with
+// derivatives-intel's own 3-wide fan-out to the same host inside
+// brain-server.ts's wider Promise.all — the sum of simultaneously in-flight
+// requests across every extended-market-data branch is what trips
+// Cloudflare's "stalled HTTP response canceled to prevent deadlock"
+// protection, confirmed live via wrangler tail.
+const MAX_CONCURRENT_REQUESTS = 3;
 
 /** Best-effort: one request per symbol, partial coverage on failure is fine. */
 export async function fetchOrderBookData(binanceSymbols: string[]): Promise<RawOrderBookData> {

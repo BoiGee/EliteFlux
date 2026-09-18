@@ -556,10 +556,24 @@ export async function getExtendedMarketData(
       logged("getMacroIntel", getMacroIntel(), NEUTRAL_MACRO),
     );
 
-    const [rawDerivatives, rawOrderBook, rawTrending, onchainReal, stablecoin, confluence, options, macro, okxPrices, volatility, communityTrust, crowd] =
+    // Derivatives and order-book each fan out to several concurrent
+    // per-symbol Binance calls internally (see their own concurrency caps).
+    // Running both of those fan-outs at the same time — on top of every
+    // other branch below — was enough combined in-flight connection count to
+    // trip Cloudflare's "stalled HTTP response canceled to prevent deadlock"
+    // protection, confirmed live via wrangler tail. Sequencing just these
+    // two (letting everything else below still run in parallel) keeps the
+    // peak concurrent connection count bounded without giving up the
+    // per-fan-out concurrency caps entirely.
+    const derivativesThenOrderBook = (async () => {
+      const derivatives = await logged("fetchDerivativesData", fetchDerivativesData(binanceSymbols), null);
+      const orderBook = await logged("fetchOrderBookData", fetchOrderBookData(binanceSymbols), new Map());
+      return [derivatives, orderBook] as const;
+    })();
+
+    const [[rawDerivatives, rawOrderBook], rawTrending, onchainReal, stablecoin, confluence, options, macro, okxPrices, volatility, communityTrust, crowd] =
       await Promise.all([
-        logged("fetchDerivativesData", fetchDerivativesData(binanceSymbols), null),
-        logged("fetchOrderBookData", fetchOrderBookData(binanceSymbols), new Map()),
+        derivativesThenOrderBook,
         logged("fetchTrendingData", fetchTrendingData(), null),
         logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
         logged(
