@@ -5,6 +5,20 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+// supabase-js's default fetch has no timeout at all — confirmed this was a
+// real gap: cron jobs were found hanging past every other fix (fetch
+// timeouts on every external API, concurrency caps on fan-outs, caching on
+// the heaviest queries) with the last diagnostic checkpoint logged being
+// right before a plain Supabase call. One stalled connection to Supabase,
+// on any of the dozens of admin.from(...) calls throughout this codebase
+// (including finishRun itself), was enough to hang a job indefinitely with
+// no way for the app-level timeouts elsewhere in the pipeline to catch it.
+function timedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25_000);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 function createSupabaseAdminClient() {
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,7 +38,10 @@ function createSupabaseAdminClient() {
       storage: undefined,
       persistSession: false,
       autoRefreshToken: false,
-    }
+    },
+    global: {
+      fetch: timedFetch,
+    },
   });
 }
 

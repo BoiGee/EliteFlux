@@ -144,9 +144,21 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       // more of it than a 5-minute cadence needs. Caching the result is the
       // fix, same as evaluateShipGate's own inner 1-hour cache already does
       // for the walk-forward/backtest gate specifically.
+      // cached()'s TTL only helps within one warm isolate — Cloudflare can
+      // and does spin up a fresh isolate between cron ticks, which resets
+      // the in-memory cache and pays the full "slow-burn" query cost again.
+      // Worse: cached() has no timeout of its own, so a slow load() just
+      // sits there — the try/catch around this whole block only helps once
+      // it actually rejects, not while it's hanging. withTimeout guarantees
+      // this cycle moves on (with recWeights left undefined, same as any
+      // other failure here) instead of missing finishRun entirely.
       const { cached } = await import("./ttl-cache.server");
-      const calib = await cached("recompute-recommendation-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
-        recomputeRecommendationWeights(admin as never),
+      const calib = await withTimeout(
+        cached("recompute-recommendation-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
+          recomputeRecommendationWeights(admin as never),
+        ),
+        20_000,
+        "recomputeRecommendationWeights",
       );
       // A regime-specific blend beats the global one once it has enough evidence.
       recWeights = calib.byRegime[metrics.regime]?.weights ?? calib.weights;
@@ -158,9 +170,11 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       // this is what lets that grade change the formula. Slow-burn: takes
       // real time to accumulate enough samples per layer to move anything —
       // same reasoning and same fix as recomputeRecommendationWeights above.
-      await cached("recompute-elite-brain-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () => recomputeEliteBrainWeights(admin as never)).catch(
-        (e) => console.error("elite-brain weight recompute failed", e),
-      );
+      await withTimeout(
+        cached("recompute-elite-brain-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () => recomputeEliteBrainWeights(admin as never)),
+        20_000,
+        "recomputeEliteBrainWeights",
+      ).catch((e) => console.error("elite-brain weight recompute failed", e));
       mark("recomputeEliteBrainWeights done");
 
       // Real trained model (logistic regression, gradient descent) alongside
@@ -169,8 +183,12 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       // table grows very large" — it has, so this now does exactly that,
       // same fix and same cached() as the two weight recomputations above.
       const { trainSignalCalibrationModels } = await import("./ml-model.server");
-      const trainResult = await cached("train-signal-calibration-models", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
-        trainSignalCalibrationModels(admin as never),
+      const trainResult = await withTimeout(
+        cached("train-signal-calibration-models", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
+          trainSignalCalibrationModels(admin as never),
+        ),
+        20_000,
+        "trainSignalCalibrationModels",
       );
       learning.modelsTrained = trainResult.trained;
       mark("trainSignalCalibrationModels done");
