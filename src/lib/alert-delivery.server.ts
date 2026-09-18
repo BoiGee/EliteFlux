@@ -30,6 +30,12 @@ async function sendTelegram(chatId: string | null, title: string, message: strin
   const botToken = process.env["TELEGRAM_BOT_TOKEN"];
   if (!botToken) return { status: "skipped", error: "Telegram bot is not connected yet" };
   try {
+    // No timeout here previously could hang alert delivery indefinitely,
+    // which blocks the whole evaluate-alerts-fast cycle from ever reaching
+    // finishRun (deliverFiredAlerts is awaited right before it) — same class
+    // of bug as the market-intelligence pipeline's missing fetch timeouts.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -38,7 +44,8 @@ async function sendTelegram(chatId: string | null, title: string, message: strin
         parse_mode: "HTML",
         text: `<b>EliteFlux · ${title}</b>\n${message}`,
       }),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     const body = await res.text();
     if (!res.ok) return { status: "failed", error: `Telegram ${res.status}: ${body.slice(0, 300)}` };
     try {

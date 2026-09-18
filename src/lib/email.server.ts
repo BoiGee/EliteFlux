@@ -13,11 +13,14 @@ export async function sendTransactionalEmail(input: EmailInput): Promise<{ ok: b
   if (!apiKey || !from) return { ok: false, error: "Email sending is not configured yet" };
 
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: input.to, subject: input.subject, html: input.html }),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     if (!res.ok) {
       const body = await res.text();
       return { ok: false, error: `Resend ${res.status}: ${body.slice(0, 300)}` };
