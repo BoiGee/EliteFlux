@@ -129,7 +129,25 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       learning.closed = r.closed;
       mark(`resolveSignalOutcomes done (resolved=${r.resolved})`);
 
-      const calib = await recomputeRecommendationWeights(admin as never);
+      // recomputeRecommendationWeights alone issues up to ~24 queries each
+      // capable of pulling 20,000 rows (a global accuracy pass, a
+      // walk-forward/backtest gate, then the same again for each of the 5
+      // known regimes individually — including regimes with nowhere near
+      // enough resolved samples to ship a candidate, which still pay for
+      // both accuracy queries before finding that out). The function's own
+      // comments already call this a "slow-burn" process that "takes real
+      // time to accumulate enough samples" — confirmed live: with a genuine
+      // multi-week backlog in signal_outcomes, redoing this every 5-minute
+      // cycle was long enough to miss finishRun entirely. Every fetch() in
+      // the rest of the pipeline now has a timeout, but there's nothing to
+      // time out here — this is real, correct, bounded query work, just far
+      // more of it than a 5-minute cadence needs. Caching the result is the
+      // fix, same as evaluateShipGate's own inner 1-hour cache already does
+      // for the walk-forward/backtest gate specifically.
+      const { cached } = await import("./ttl-cache.server");
+      const calib = await cached("recompute-recommendation-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
+        recomputeRecommendationWeights(admin as never),
+      );
       // A regime-specific blend beats the global one once it has enough evidence.
       recWeights = calib.byRegime[metrics.regime]?.weights ?? calib.weights;
       learning.weightSamples = calib.sampleSize;
@@ -138,15 +156,22 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
 
       // Closes the loop on the flagship flux_score — it's always been graded,
       // this is what lets that grade change the formula. Slow-burn: takes
-      // real time to accumulate enough samples per layer to move anything.
-      await recomputeEliteBrainWeights(admin as never).catch((e) => console.error("elite-brain weight recompute failed", e));
+      // real time to accumulate enough samples per layer to move anything —
+      // same reasoning and same fix as recomputeRecommendationWeights above.
+      await cached("recompute-elite-brain-weights", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () => recomputeEliteBrainWeights(admin as never)).catch(
+        (e) => console.error("elite-brain weight recompute failed", e),
+      );
       mark("recomputeEliteBrainWeights done");
 
       // Real trained model (logistic regression, gradient descent) alongside
-      // the linear blend — cheap at today's data volume; move to a slower
-      // cadence than every 5 minutes if the outcome table grows very large.
+      // the linear blend. This comment used to say "cheap at today's data
+      // volume; move to a slower cadence than every 5 minutes if the outcome
+      // table grows very large" — it has, so this now does exactly that,
+      // same fix and same cached() as the two weight recomputations above.
       const { trainSignalCalibrationModels } = await import("./ml-model.server");
-      const trainResult = await trainSignalCalibrationModels(admin as never);
+      const trainResult = await cached("train-signal-calibration-models", { ttlMs: 30 * 60_000, staleMs: 3 * 3600_000 }, () =>
+        trainSignalCalibrationModels(admin as never),
+      );
       learning.modelsTrained = trainResult.trained;
       mark("trainSignalCalibrationModels done");
     } catch (e) {
