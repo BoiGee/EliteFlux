@@ -75,12 +75,24 @@ const sha512Hex = (payload: string) => createHash("sha512").update(payload).dige
 
 const DUST = 1e-8;
 
+// No fetch() here previously had a timeout — a stalled response during a
+// real Autopilot order or balance read could hang the calling job
+// indefinitely (confirmed live: runEvaluateAlertsJob calls into this via
+// autopilot.server.ts's executeAction, and a hung isolate here means the
+// whole cycle never reaches finishRun — same bug class already fixed across
+// the market-intelligence pipeline and alert delivery).
+function timedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 /* ------------------------------- balances ------------------------------- */
 
 async function binanceBalances(c: Credentials): Promise<Balance[]> {
   const query = `timestamp=${Date.now()}&recvWindow=10000`;
   const url = `${HOSTS.binance}/api/v3/account?${query}&signature=${hmacHex(c.apiSecret, query)}`;
-  const res = await fetch(url, { headers: { "X-MBX-APIKEY": c.apiKey } });
+  const res = await timedFetch(url, { headers: { "X-MBX-APIKEY": c.apiKey } });
   const json = (await res.json()) as {
     balances?: { asset: string; free: string; locked: string }[];
     msg?: string;
@@ -96,7 +108,7 @@ async function bybitBalances(c: Credentials): Promise<Balance[]> {
   const recv = "10000";
   const query = "accountType=UNIFIED";
   const sign = hmacHex(c.apiSecret, ts + c.apiKey + recv + query);
-  const res = await fetch(`${HOSTS.bybit}/v5/account/wallet-balance?${query}`, {
+  const res = await timedFetch(`${HOSTS.bybit}/v5/account/wallet-balance?${query}`, {
     headers: {
       "X-BAPI-API-KEY": c.apiKey,
       "X-BAPI-TIMESTAMP": ts,
@@ -119,7 +131,7 @@ async function bybitBalances(c: Credentials): Promise<Balance[]> {
 async function okxBalances(c: Credentials): Promise<Balance[]> {
   const ts = new Date().toISOString();
   const path = "/api/v5/account/balance";
-  const res = await fetch(`${HOSTS.okx}${path}`, {
+  const res = await timedFetch(`${HOSTS.okx}${path}`, {
     headers: {
       "OK-ACCESS-KEY": c.apiKey,
       "OK-ACCESS-SIGN": hmacB64(c.apiSecret, `${ts}GET${path}`),
@@ -144,7 +156,7 @@ async function gateioBalances(c: Credentials): Promise<Balance[]> {
   const method = "GET";
   const path = "/api/v4/spot/accounts";
   const signString = `${method}\n${path}\n\n${sha512Hex("")}\n${ts}`;
-  const res = await fetch(`${HOSTS.gateio}${path}`, {
+  const res = await timedFetch(`${HOSTS.gateio}${path}`, {
     headers: {
       KEY: c.apiKey,
       Timestamp: ts,
@@ -168,7 +180,7 @@ async function kucoinBalances(c: Credentials): Promise<Balance[]> {
   const prehash = `${ts}${method}${path}`;
   // API-Key-V2: the passphrase itself is HMAC-signed (not sent plain) —
   // matches the "KC-API-KEY-VERSION: 2" requirement KuCoin's own docs call out.
-  const res = await fetch(`${HOSTS.kucoin}${path}`, {
+  const res = await timedFetch(`${HOSTS.kucoin}${path}`, {
     headers: {
       "KC-API-KEY": c.apiKey,
       "KC-API-SIGN": hmacB64(c.apiSecret, prehash),
@@ -188,7 +200,7 @@ async function kucoinBalances(c: Credentials): Promise<Balance[]> {
 async function mexcBalances(c: Credentials): Promise<Balance[]> {
   const query = `timestamp=${Date.now()}&recvWindow=10000`;
   const url = `${HOSTS.mexc}/api/v3/account?${query}&signature=${hmacHex(c.apiSecret, query)}`;
-  const res = await fetch(url, { headers: { "X-MEXC-APIKEY": c.apiKey } });
+  const res = await timedFetch(url, { headers: { "X-MEXC-APIKEY": c.apiKey } });
   const json = (await res.json()) as { balances?: { asset: string; free: string; locked: string }[]; msg?: string };
   if (!res.ok) throw new Error(json.msg ?? `Account read rejected (${res.status})`);
   return (json.balances ?? [])
@@ -223,7 +235,7 @@ async function binanceOrder(c: Credentials, r: OrderRequest): Promise<OrderResul
   if (r.side === "buy") params.set("quoteOrderQty", String(r.quoteUsd ?? 0));
   else params.set("quantity", String(r.baseQty ?? 0));
   const query = params.toString();
-  const res = await fetch(
+  const res = await timedFetch(
     `${HOSTS.binance}/api/v3/order?${query}&signature=${hmacHex(c.apiSecret, query)}`,
     { method: "POST", headers: { "X-MBX-APIKEY": c.apiKey } },
   );
@@ -249,7 +261,7 @@ async function bybitOrder(c: Credentials, r: OrderRequest): Promise<OrderResult>
     marketUnit: r.side === "buy" ? "quoteCoin" : "baseCoin",
     orderLinkId: r.clientOrderId,
   });
-  const res = await fetch(`${HOSTS.bybit}/v5/order/create`, {
+  const res = await timedFetch(`${HOSTS.bybit}/v5/order/create`, {
     method: "POST",
     headers: {
       "X-BAPI-API-KEY": c.apiKey,
@@ -284,7 +296,7 @@ async function okxOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> {
     tgtCcy: r.side === "buy" ? "quote_ccy" : "base_ccy",
     clOrdId: r.clientOrderId,
   });
-  const res = await fetch(`${HOSTS.okx}${path}`, {
+  const res = await timedFetch(`${HOSTS.okx}${path}`, {
     method: "POST",
     headers: {
       "OK-ACCESS-KEY": c.apiKey,
@@ -317,7 +329,7 @@ async function mexcOrder(c: Credentials, r: OrderRequest): Promise<OrderResult> 
   if (r.side === "buy") params.set("quoteOrderQty", String(r.quoteUsd ?? 0));
   else params.set("quantity", String(r.baseQty ?? 0));
   const query = params.toString();
-  const res = await fetch(`${HOSTS.mexc}/api/v3/order?${query}&signature=${hmacHex(c.apiSecret, query)}`, {
+  const res = await timedFetch(`${HOSTS.mexc}/api/v3/order?${query}&signature=${hmacHex(c.apiSecret, query)}`, {
     method: "POST",
     headers: { "X-MEXC-APIKEY": c.apiKey },
   });

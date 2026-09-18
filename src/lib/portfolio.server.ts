@@ -14,10 +14,18 @@ type DB = SupabaseClient<any, any, any>;
 const BINANCE_REST = "https://api.binance.com/api/v3";
 const BYBIT_REST = "https://api.bybit.com/v5";
 
+// No fetch() here previously had a timeout — a stalled response could hang
+// the whole portfolio sync indefinitely.
+function timedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 /** Second exchange, public ticker read — Bybit's spot symbol ("BTCUSDT") needs no reshaping to match `${symbol}USDT` keys. */
 async function fetchBybitPrices(): Promise<Map<string, number> | null> {
   try {
-    const res = await fetch(`${BYBIT_REST}/market/tickers?category=spot`, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+    const res = await timedFetch(`${BYBIT_REST}/market/tickers?category=spot`, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
     if (!res.ok) return null;
     const json = (await res.json()) as { result?: { list?: { symbol: string; lastPrice: string }[] } };
     const map = new Map<string, number>();
@@ -68,7 +76,7 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
   const pairs = needed.map((s) => `${s}USDT`);
   try {
     const url = `${BINANCE_REST}/ticker/price?symbols=${encodeURIComponent(JSON.stringify(pairs))}`;
-    const res = await fetch(url);
+    const res = await timedFetch(url);
     if (res.ok) {
       const arr = (await res.json()) as { symbol: string; price: string }[];
       for (const t of arr) {
@@ -93,7 +101,7 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
 async function fetchPricesIndividually(pairs: string[], prices: Record<string, number>): Promise<void> {
   const results = await Promise.allSettled(
     pairs.map(async (pair) => {
-      const res = await fetch(`${BINANCE_REST}/ticker/price?symbol=${pair}`);
+      const res = await timedFetch(`${BINANCE_REST}/ticker/price?symbol=${pair}`);
       if (!res.ok) throw new Error(`${pair} unavailable`);
       const t = (await res.json()) as { symbol: string; price: string };
       return { base: t.symbol.replace(/USDT$/, ""), price: Number(t.price) };

@@ -26,11 +26,16 @@ export function isValidAddress(chain: Chain, address: string): boolean {
 }
 
 async function rpc(url: string, method: string, params: unknown[]): Promise<unknown> {
+  // No timeout here previously could hang a wallet balance read indefinitely
+  // on a single stalled RPC response.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
   const json = (await res.json()) as { result?: unknown; error?: { message?: string } };
   if (json.error) throw new Error(json.error.message ?? "chain read failed");
   return json.result;
