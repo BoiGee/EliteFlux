@@ -18,9 +18,10 @@ import { fetchOkxPrices, computeCrossExchangeIntel, type CrossExchangeIntel } fr
 import { getCommunityTrustIntel, type CommunityTrustIntel } from "./community-trust";
 import { loadCrowdIntel, type CrowdIntel } from "./crowd-intel";
 import { computeExitIntel } from "./exit-intel";
-import { fetchDerivativesData, computeDerivativesIntel, type DerivativesIntel } from "./derivatives-intel";
-import { fetchOrderBookData, computeOrderBookIntel, type OrderBookIntel } from "./orderbook-intel";
-import { fetchTrendingData, computeSocialIntel, type SocialIntel } from "./social-intel";
+import { fetchDerivativesData, computeDerivativesIntel, type DerivativesIntel, type RawDerivativesData } from "./derivatives-intel";
+import { fetchOrderBookData, computeOrderBookIntel, type OrderBookIntel, type RawOrderBookData } from "./orderbook-intel";
+import { fetchTrendingData, computeSocialIntel, type SocialIntel, type RawTrendingData } from "./social-intel";
+import { mapWithConcurrency } from "./concurrency.server";
 import type { AlertMetrics } from "./alerts-engine";
 import { computeConfidence, layerAgreement, type ConfidenceResult } from "./model-calibration";
 import type { SignalEventInput } from "./signal-tracking.server";
@@ -551,10 +552,13 @@ export async function getExtendedMarketData(
       });
 
     // Macro data (daily closes off Yahoo + CoinGecko) barely moves intra-day —
-    // its own long-lived cache so it isn't re-fetched every 90s with everything else.
-    const macroPromise = cached("macro-intel", { ttlMs: 3 * 3600_000, staleMs: 24 * 3600_000 }, () =>
-      logged("getMacroIntel", getMacroIntel(), NEUTRAL_MACRO),
-    );
+    // its own long-lived cache so it isn't re-fetched every 90s with everything
+    // else. Kept lazy (a function, not an already-invoked call) so the pool
+    // below actually controls when this starts — see derivativesThenOrderBook.
+    const macroPromise = () =>
+      cached("macro-intel", { ttlMs: 3 * 3600_000, staleMs: 24 * 3600_000 }, () =>
+        logged("getMacroIntel", getMacroIntel(), NEUTRAL_MACRO),
+      );
 
     // Derivatives and order-book each fan out to several concurrent
     // per-symbol Binance calls internally (see their own concurrency caps).
@@ -565,50 +569,83 @@ export async function getExtendedMarketData(
     // two (letting everything else below still run in parallel) keeps the
     // peak concurrent connection count bounded without giving up the
     // per-fan-out concurrency caps entirely.
-    const derivativesThenOrderBook = (async () => {
+    // A plain function, not an invoked IIFE — it must stay lazy so the pool
+    // below actually controls when it starts, not just when its result is
+    // awaited (an already-started promise ignores queuing entirely).
+    const derivativesThenOrderBook = async () => {
       const derivatives = await logged("fetchDerivativesData", fetchDerivativesData(binanceSymbols), null);
       const orderBook = await logged("fetchOrderBookData", fetchOrderBookData(binanceSymbols), new Map());
       return [derivatives, orderBook] as const;
-    })();
+    };
 
-    const [[rawDerivatives, rawOrderBook], rawTrending, onchainReal, stablecoin, confluence, options, macro, okxPrices, volatility, communityTrust, crowd] =
-      await Promise.all([
-        derivativesThenOrderBook,
-        logged("fetchTrendingData", fetchTrendingData(), null),
-        logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
+    // Sequencing derivatives/order-book against each other (above) turned out
+    // not to be enough on its own — live tail still showed "stalled HTTP
+    // response canceled to prevent deadlock" warnings, because the other 9
+    // branches below were all still starting in the very same instant via
+    // the old flat Promise.all. Running every branch through a shared
+    // 4-wide pool (thunks, not already-started promises — mapWithConcurrency
+    // only delays work that hasn't started yet) bounds the actual number of
+    // concurrently in-flight branches regardless of how many there are or
+    // what any one of them does internally.
+    const branches: (() => Promise<unknown>)[] = [
+      derivativesThenOrderBook,
+      () => logged("fetchTrendingData", fetchTrendingData(), null),
+      () => logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
+      () =>
         logged(
           "getStablecoinSupplyIntel",
           getStablecoinSupplyIntel(supabaseAdmin as never),
           { perSymbol: {}, netLiquidityScore: 50, totalSupplyUsd: 0, generatedAt: Date.now() } as StablecoinSupplyIntel,
         ),
+      () =>
         logged(
           "getConfluenceIntel",
           getConfluenceIntel(supabaseAdmin as never, snapshot),
           { perAsset: {}, marketAlignment: 0, generatedAt: Date.now() } as ConfluenceIntel,
         ),
+      () =>
         logged(
           "getOptionsIntel",
           getOptionsIntel(supabaseAdmin as never),
           { perCurrency: {}, generatedAt: Date.now() } as OptionsIntel,
         ),
-        macroPromise,
-        logged("fetchOkxPrices", fetchOkxPrices(), null),
+      macroPromise,
+      () => logged("fetchOkxPrices", fetchOkxPrices(), null),
+      () =>
         logged(
           "getVolatilityIntel",
           getVolatilityIntel(supabaseAdmin as never, volatilityTickers, volatilitySymbols),
           { perAsset: {}, generatedAt: Date.now() } as VolatilityIntel,
         ),
+      () =>
         logged(
           "getCommunityTrustIntel",
           getCommunityTrustIntel(supabaseAdmin as never),
           { perAsset: {}, generatedAt: Date.now() } as CommunityTrustIntel,
         ),
+      () =>
         logged(
           "loadCrowdIntel",
           loadCrowdIntel(supabaseAdmin as never),
           { perAsset: {}, sampleSize: 0, generatedAt: Date.now() } as CrowdIntel,
         ),
-      ]);
+    ];
+
+    const [derivAndBook, rawTrending, onchainReal, stablecoin, confluence, options, macro, okxPrices, volatility, communityTrust, crowd] =
+      (await mapWithConcurrency(branches, 4, (branch) => branch())) as [
+        readonly [RawDerivativesData | null, RawOrderBookData],
+        RawTrendingData,
+        OnChainSignal[] | null,
+        StablecoinSupplyIntel,
+        ConfluenceIntel,
+        OptionsIntel,
+        MacroIntel,
+        Map<string, number> | null,
+        VolatilityIntel,
+        CommunityTrustIntel,
+        CrowdIntel,
+      ];
+    const [rawDerivatives, rawOrderBook] = derivAndBook;
 
     return {
       derivatives: computeDerivativesIntel(snapshot, rawDerivatives),
