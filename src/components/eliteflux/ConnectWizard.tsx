@@ -52,7 +52,8 @@ const CREATE: Record<Venue, string[]> = {
 const PERMS: Record<Venue, { on: string; trade: string; off: string }> = {
   binance: {
     on: "Tick “Enable Reading”.",
-    trade: "Only tick “Enable Spot & Margin Trading” if you want Flux to place orders for you.",
+    trade:
+      "Leave “Enable Spot & Margin Trading” OFF — Binance requires a whitelisted IP for any key with trading enabled, and EliteFlux has no fixed outbound IP to give it, so a trading-enabled Binance key can never connect here. Use Bybit or OKX instead if you want Flux to place orders for you.",
     off: "Leave “Enable Withdrawals” switched OFF.",
   },
   bybit: {
@@ -198,7 +199,8 @@ export function ConnectWizard({
                 {(["read_only", "read_trade"] as Permission[]).map((p) => (
                   <button
                     key={p}
-                    disabled={readonlyOnly && p === "read_trade"}
+                    disabled={(readonlyOnly || venue === "binance") && p === "read_trade"}
+                    title={venue === "binance" && p === "read_trade" ? "Binance won't allow this combination — see above." : undefined}
                     onClick={() => setPermission(p)}
                     className={`py-2 rounded-lg text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
                       permission === p ? "bg-primary/20 ring-1 ring-primary" : "bg-surface-2/60 text-muted-foreground"
@@ -300,7 +302,7 @@ export function ConnectWizard({
                 onClick={() =>
                   onSubmit({
                     venue,
-                    permission: readonlyOnly ? "read_only" : permission,
+                    permission: readonlyOnly || venue === "binance" ? "read_only" : permission,
                     apiKey: apiKey.trim(),
                     apiSecret: apiSecret.trim(),
                     passphrase: passphrase.trim(),

@@ -62,8 +62,12 @@ export const keyPolicySchema = z.object({ readonlyOnly: z.boolean() });
  */
 export function friendlyConnectError(message: string): string | null {
   const m = (message || "").toLowerCase();
+  // Messages we already wrote ourselves (e.g. the Binance trade-permission
+  // guard in connectExchange) are already the friendliest wording — don't
+  // let the generic pattern matches below overwrite them.
+  if (/can never connect/.test(m)) return null;
   if (/api-key, ip, or permissions/.test(m))
-    return "Your exchange rejected this for one of three reasons: the key/secret is wrong, an IP restriction is on, or reading isn't enabled. Since we run on shared cloud infrastructure with no fixed IP, first set the key's IP access to Unrestricted (an IP whitelist will always fail here) — then double-check Read is enabled and the key/secret were copied correctly.";
+    return "Your exchange rejected this for one of three reasons: the key/secret is wrong, an IP restriction is on, or reading isn't enabled. Since we run on shared cloud infrastructure with no fixed IP, first set the key's IP access to Unrestricted (an IP whitelist will always fail here) — then double-check Read is enabled and the key/secret were copied correctly. Note: Binance only allows Unrestricted access on read-only keys; if you need trading permission, use Bybit or OKX instead.";
   if (/signature|invalid api|api-key format|apikey|invalid key|unauthorized|401/.test(m))
     return "That key or secret was not accepted. It is almost always a missing character or a stray space — copy both again from your exchange and paste them without editing.";
   if (/ip|whitelist|restricted location|region/.test(m))

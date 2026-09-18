@@ -116,7 +116,7 @@ function PortfolioPage() {
       return connect({
         data: {
           venue: p.venue,
-          permission: p.permission,
+          permission: p.venue === "binance" ? "read_only" : p.permission,
           apiKey: p.apiKey,
           apiSecret: p.apiSecret,
           ...(p.passphrase ? { passphrase: p.passphrase } : {}),
@@ -349,8 +349,14 @@ function PortfolioPage() {
               {(["read_only", "read_trade"] as const).map((p) => (
                 <button
                   key={p}
-                  disabled={readonlyOnly && p === "read_trade"}
-                  title={readonlyOnly && p === "read_trade" ? "Your account is locked to read-only keys." : undefined}
+                  disabled={(readonlyOnly || venue === "binance") && p === "read_trade"}
+                  title={
+                    readonlyOnly && p === "read_trade"
+                      ? "Your account is locked to read-only keys."
+                      : venue === "binance" && p === "read_trade"
+                        ? "Binance requires a whitelisted IP for trading-enabled keys, and EliteFlux has no fixed outbound IP to give it. Use Bybit or OKX for Autopilot instead."
+                        : undefined
+                  }
                   onClick={() => setPermission(p)}
                   className={`py-2 rounded-lg text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
                     permission === p ? "bg-primary/20 ring-1 ring-primary text-foreground" : "bg-surface-2/60 text-muted-foreground"
@@ -360,6 +366,13 @@ function PortfolioPage() {
                 </button>
               ))}
             </div>
+            {venue === "binance" && (
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Binance won't allow trading permission on an unrestricted-IP key, and EliteFlux has no fixed outbound
+                IP to whitelist — so Binance connections here are read-only (tracking and coaching). For Autopilot to
+                place trades, connect Bybit or OKX instead.
+              </p>
+            )}
 
 
             <div className="space-y-2">

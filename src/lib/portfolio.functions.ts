@@ -67,6 +67,18 @@ export const connectExchange = createServerFn({ method: "POST" })
       );
     }
 
+    // Binance requires IP-restricted access on any key with trading enabled
+    // (it won't even let you save the key as Unrestricted) — but EliteFlux
+    // runs on Cloudflare with no fixed outbound IP to give you, so a
+    // trade-permission Binance key can never actually connect here. Reject it
+    // up front with the real reason instead of letting it fail against
+    // Binance with their generic "invalid key/IP/permissions" error.
+    if (data.venue === "binance" && data.permission === "read_trade") {
+      throw new Error(
+        "Binance requires a whitelisted IP for any key with Spot & Margin Trading enabled, and EliteFlux has no fixed outbound IP to give you — so this combination can never connect. Use a read-only Binance key for tracking and coaching, or connect Bybit/OKX instead if you want Autopilot to place trades for you.",
+      );
+    }
+
     const { seal, keyHint } = await import("@/lib/vault.server");
     const { fetchBalances } = await import("@/lib/exchanges.server");
 

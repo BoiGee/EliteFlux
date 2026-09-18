@@ -260,7 +260,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "portfolio",
     title: "Portfolio",
     where: "/portfolio",
-    what: "Connect exchange accounts or paste public wallet addresses (Ethereum/EVM and Solana supported) to see all your holdings in one place, with weights and value. Connections can be locked to read-only so nothing can ever be traded.",
+    what: "Connect exchange accounts or paste public wallet addresses (Ethereum/EVM and Solana supported) to see all your holdings in one place, with weights and value. Connections can be locked to read-only so nothing can ever be traded. Binance connections are read-only only here — Binance requires a whitelisted IP for trading-enabled keys and EliteFlux has no fixed outbound IP to give it, so Binance can't be used for Autopilot execution; connect Bybit or OKX for that.",
     eli5: "One page that shows everything you own across your different apps and wallets.",
     plan: "pro",
     keywords: ["portfolio", "holdings", "exchange", "wallet", "binance", "bybit", "okx", "connect"],
@@ -269,7 +269,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "autopilot",
     title: "Autopilot & the autonomy dial",
     where: "/autopilot",
-    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — even if nothing else about the position looks wrong yet.",
+    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — even if nothing else about the position looks wrong yet. Live execution needs a trading-enabled Bybit or OKX connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
     eli5: "A dial from 'just tell me' to 'do it for me', with a big red stop button you control.",
     plan: "elite",
     keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve"],
@@ -332,7 +332,7 @@ export const HOW_TO: HowToDoc[] = [
     steps: [
       "Open /portfolio and press Connect, then pick your exchange.",
       "In your exchange app, create a new API key. Give it a name you will recognise, like 'EliteFlux read'.",
-      "Turn ON read / view permission only. Turn OFF withdrawals. Leave trading OFF unless you intend to use Autopilot later.",
+      "Turn ON read / view permission only. Turn OFF withdrawals. Leave trading OFF unless you intend to use Autopilot later — and note Binance can't be used for Autopilot at all (it requires a whitelisted IP for trading keys, which EliteFlux can't provide), so use Bybit or OKX if you want live execution.",
       "Copy the key and the secret, paste them into the EliteFlux wizard, and save.",
       "Leave the read-only lock switched on in Portfolio. With it on, no trade can ever be placed, even by mistake.",
       "If anything ever feels wrong, delete the key in your exchange app — that instantly cuts the connection.",
@@ -518,6 +518,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-08-20",
+    title: "Binance no longer offered for Autopilot trading — read-only only",
+    detail:
+      "Binance requires a whitelisted IP on any key with Spot & Margin Trading enabled, and won't let you save such a key as Unrestricted. EliteFlux has no fixed outbound IP to give it, so a trading-enabled Binance key could never actually connect — it just failed with a confusing error. The connect flow now only offers read-only for Binance (tracking, coaching, everything except Autopilot execution) and explains why. If you want Autopilot to place trades for you, connect Bybit or OKX instead — neither forces IP restriction on trading keys.",
+  },
   {
     date: "2026-08-19",
     title: "Clearer message when an exchange connection is rejected for IP reasons",
