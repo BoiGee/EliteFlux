@@ -14,7 +14,19 @@ import { useNitroHooks } from "nitro/app";
 
 export default definePlugin(() => {
   const hooks = useNitroHooks();
-  hooks.hook("cloudflare:scheduled", async (event: { controller: { cron: string } }) => {
+  hooks.hook("cloudflare:scheduled", async (event: { controller: { cron: string }; env: unknown }) => {
+    // process.env (via the nodejs_compat flag) is populated for `fetch`
+    // invocations but was observed empty here — every job body reads
+    // credentials off process.env (e.g. client.server.ts's
+    // createSupabaseAdminClient), so without this every scheduled run fails
+    // before doing anything. `env` carries the exact same Worker bindings
+    // Cloudflare passes to fetch(request, env, ctx); only string values are
+    // real vars/secrets, everything else (KV/D1/Assets bindings) is skipped.
+    if (event.env && typeof event.env === "object") {
+      for (const [key, value] of Object.entries(event.env as Record<string, unknown>)) {
+        if (typeof value === "string") process.env[key] = value;
+      }
+    }
     const { runScheduledTick } = await import("./scheduler.server");
     await runScheduledTick(event.controller.cron);
   });
