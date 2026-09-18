@@ -13,5 +13,14 @@
       "0 */12 * * *",
       "0 3 * * *"
     ]
+  },
+  // Explicit rather than relying on the paid-plan default (10,000) applying
+  // automatically — confirmed live this account kept throttling at the
+  // free-plan ceiling (50) for a while after upgrading to Workers Paid, a
+  // known class of issue where the new entitlement doesn't take effect on
+  // its own. Setting this directly is unambiguous regardless of account-side
+  // propagation delay.
+  "limits": {
+    "subrequests": 10000
   }
 }
