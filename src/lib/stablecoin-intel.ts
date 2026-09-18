@@ -47,7 +47,10 @@ export async function fetchStablecoinSupplies(): Promise<StablecoinReading[] | n
           const res = await fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
             clearTimeout(timer),
           );
-          if (!res.ok) return null;
+          if (!res.ok) {
+            res.body?.cancel().catch(() => {});
+            return null;
+          }
           const json = (await res.json()) as { status: string; result: string };
           if (json.status !== "1") return null;
           const raw = Number(json.result);

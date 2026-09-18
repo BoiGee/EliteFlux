@@ -26,7 +26,10 @@ function timedFetch(url: string, init?: RequestInit): Promise<Response> {
 async function fetchBybitPrices(): Promise<Map<string, number> | null> {
   try {
     const res = await timedFetch(`${BYBIT_REST}/market/tickers?category=spot`, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as { result?: { list?: { symbol: string; lastPrice: string }[] } };
     const map = new Map<string, number>();
     for (const t of json.result?.list ?? []) {
@@ -86,6 +89,7 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
       }
       return prices;
     }
+    res.body?.cancel().catch(() => {});
     // Binance rejects the WHOLE batch if even one pair is invalid/delisted —
     // fall back to per-symbol requests so one bad pair doesn't zero out
     // pricing for every other asset in this sync.
@@ -102,7 +106,10 @@ async function fetchPricesIndividually(pairs: string[], prices: Record<string, n
   const results = await Promise.allSettled(
     pairs.map(async (pair) => {
       const res = await timedFetch(`${BINANCE_REST}/ticker/price?symbol=${pair}`);
-      if (!res.ok) throw new Error(`${pair} unavailable`);
+      if (!res.ok) {
+        res.body?.cancel().catch(() => {});
+        throw new Error(`${pair} unavailable`);
+      }
       const t = (await res.json()) as { symbol: string; price: string };
       return { base: t.symbol.replace(/USDT$/, ""), price: Number(t.price) };
     }),

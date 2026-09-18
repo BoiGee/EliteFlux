@@ -75,7 +75,15 @@ export async function fetchDerivativesData(binanceSymbols: string[]): Promise<Ra
 
   try {
     const res = await futuresFetch(`${FUTURES_REST}/premiumIndex`);
-    if (!res.ok) return null;
+    // Binance is confirmed blocked (403) on every request from this Worker's
+    // egress, so this branch always hits the non-ok path in practice — an
+    // undrained body here, repeated every cycle, is exactly what Cloudflare's
+    // "stalled HTTP response canceled to prevent deadlock" protection flags
+    // (confirmed live via wrangler tail), independent of connection count.
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const arr = (await res.json()) as RawPremiumIndex[];
     const wanted = new Set(binanceSymbols);
     for (const row of arr) {
@@ -98,7 +106,10 @@ export async function fetchDerivativesData(binanceSymbols: string[]): Promise<Ra
   await mapWithConcurrency(binanceSymbols, 3, async (sym) => {
     try {
       const res = await futuresFetch(`${FUTURES_REST}/openInterest?symbol=${sym}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        res.body?.cancel().catch(() => {});
+        return;
+      }
       const row = (await res.json()) as RawOpenInterest;
       openInterest.set(sym, parseFloat(row.openInterest));
     } catch {

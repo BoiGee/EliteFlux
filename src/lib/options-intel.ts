@@ -53,7 +53,10 @@ async function fetchOptionsChain(currency: TrackedCurrency): Promise<DeribitInst
       headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" },
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
-    if (!res.ok) return null;
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as { result?: DeribitInstrument[] };
     return json.result ?? null;
   } catch {

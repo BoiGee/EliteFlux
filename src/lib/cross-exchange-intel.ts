@@ -25,7 +25,15 @@ export async function fetchOkxPrices(): Promise<Map<string, number> | null> {
     const res = await fetch(OKX_TICKERS, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
       clearTimeout(timer),
     );
-    if (!res.ok) return null;
+    // Draining an unread body before bailing matters here: this sits in a
+    // pool of concurrent branches every cycle (getExtendedMarketData), and
+    // Cloudflare's deadlock detector confirmed live counts unread response
+    // bodies, not just open connections — a non-ok response left undrained
+    // is exactly what it flags.
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as { code?: string; data?: { instId: string; last: string }[] };
     if (json.code !== "0" || !json.data) return null;
     const map = new Map<string, number>();

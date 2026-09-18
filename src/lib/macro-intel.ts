@@ -37,7 +37,10 @@ async function fetchYahooDaily(symbol: string): Promise<DailySeries | null> {
       "User-Agent": "Mozilla/5.0 (EliteFlux/1.0)",
       Accept: "application/json",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as {
       chart?: { result?: { timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] };
     };
@@ -65,7 +68,10 @@ async function fetchBtcDaily(days = 90): Promise<DailySeries | null> {
       "User-Agent": "EliteFlux/1.0",
       Accept: "application/json",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as { prices?: [number, number][] };
     if (!json.prices?.length) return null;
     const dates = json.prices.map(([ts]) => new Date(ts).toISOString().slice(0, 10));

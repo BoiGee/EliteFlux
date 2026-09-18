@@ -126,7 +126,10 @@ async function etherscanCall<T>(params: string, apiKey: string): Promise<T[]> {
     const res = await fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
       clearTimeout(timer),
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return [];
+    }
     const json = (await res.json()) as { status: string; result: T[] | string };
     return json.status === "1" && Array.isArray(json.result) ? json.result : [];
   });

@@ -51,7 +51,10 @@ export async function fetchTrendingData(): Promise<RawTrendingData> {
     const res = await fetch(TRENDING_URL, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
       clearTimeout(timer),
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      res.body?.cancel().catch(() => {});
+      return null;
+    }
     const json = (await res.json()) as { coins?: RawTrendingItem[] };
     return json.coins ?? null;
   } catch {

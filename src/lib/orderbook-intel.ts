@@ -63,7 +63,16 @@ export async function fetchOrderBookData(binanceSymbols: string[]): Promise<RawO
   await mapWithConcurrency(binanceSymbols, MAX_CONCURRENT_REQUESTS, async (sym) => {
     try {
       const res = await depthFetch(`${SPOT_REST}/depth?symbol=${sym}&limit=${DEPTH_LIMIT}`);
-      if (!res.ok) return;
+      // Binance is confirmed blocked (403) on every request from this
+      // Worker's egress — this branch always hits the non-ok path in
+      // practice, up to MAX_CONCURRENT_REQUESTS times per cycle. An
+      // undrained body here is exactly what Cloudflare's "stalled HTTP
+      // response canceled to prevent deadlock" protection flags (confirmed
+      // live via wrangler tail), independent of connection count.
+      if (!res.ok) {
+        res.body?.cancel().catch(() => {});
+        return;
+      }
       const json = (await res.json()) as RawDepth;
       out.set(sym, json);
     } catch {
