@@ -46,7 +46,15 @@ export async function finishRun(
 ): Promise<void> {
   const status = summary.status ?? "ok";
 
-  await admin
+  // Previously unchecked: an update() that fails server-side (RLS, a bad
+  // constraint, anything) resolves without throwing, same as a successful
+  // one — the caller's own mark()/log right after this call would fire
+  // either way, making a silently-failed finishRun look identical to a
+  // real one in the logs. Confirmed live: jobs reached this call, logged
+  // past it, and the row was still "running" with finished_at still null
+  // minutes later. Logging the error here doesn't fix why it fails, but it
+  // stops that failure from being invisible.
+  const { error, data } = await admin
     .from("system_runs")
     .update({
       status,
@@ -56,7 +64,13 @@ export async function finishRun(
       errors: summary.errors ?? 0,
       detail: (summary.detail as never) ?? null,
     })
-    .eq("id", handle.id);
+    .eq("id", handle.id)
+    .select("id");
+  if (error) {
+    console.error(`finishRun: update failed for run ${handle.id}`, error);
+  } else if (!data || (Array.isArray(data) && data.length === 0)) {
+    console.error(`finishRun: update matched no row for run ${handle.id} (already overwritten by stale-cleanup?)`);
+  }
 
   if (status === "failed") {
     const { data: row } = await admin.from("system_runs").select("job").eq("id", handle.id).maybeSingle();
