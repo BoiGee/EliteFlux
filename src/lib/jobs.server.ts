@@ -206,23 +206,35 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
         .order("captured_at", { ascending: false })
         .range(1, 1)
         .maybeSingle();
+      // None of these three loop over a *bounded* set the way the learning
+      // queries do — each walks every due call / eligible user and can grow
+      // with the user base. Confirmed live: this block alone took 28s in an
+      // otherwise-healthy run, and unlike the learning block above it had no
+      // timeout at all — a single slow Telegram/email send inside it (both
+      // already have their own fetch timeout, but not a bound on how many
+      // get sent serially) could still push the whole job toward the
+      // 10-minute stale threshold.
       const { gradeDueCalls } = await import("./coach.server");
-      graded = await gradeDueCalls(admin as never, metrics.priceBySymbol);
+      graded = await withTimeout(gradeDueCalls(admin as never, metrics.priceBySymbol), 45_000, "gradeDueCalls");
       const { sendCoachNudges } = await import("./coach-nudges.server");
       const topNarrative = brainResult.narrative?.topEmerging?.[0];
-      nudged = await sendCoachNudges(admin as never, {
-        regime: metrics.regime,
-        previousRegime: (prev as { regime: string | null } | null)?.regime ?? null,
-        fluxScore: metrics.fluxScore,
-        exitPressure: metrics.exitPressure,
-        whalePhase: metrics.whaleScore >= 60 ? "accumulating" : metrics.whaleScore <= 40 ? "distributing" : "neutral",
-        leadingNarrative:
-          (topNarrative as { name?: string; theme?: string } | undefined)?.name ??
-          (topNarrative as { theme?: string } | undefined)?.theme ??
-          null,
-      });
+      nudged = await withTimeout(
+        sendCoachNudges(admin as never, {
+          regime: metrics.regime,
+          previousRegime: (prev as { regime: string | null } | null)?.regime ?? null,
+          fluxScore: metrics.fluxScore,
+          exitPressure: metrics.exitPressure,
+          whalePhase: metrics.whaleScore >= 60 ? "accumulating" : metrics.whaleScore <= 40 ? "distributing" : "neutral",
+          leadingNarrative:
+            (topNarrative as { name?: string; theme?: string } | undefined)?.name ??
+            (topNarrative as { theme?: string } | undefined)?.theme ??
+            null,
+        }),
+        45_000,
+        "sendCoachNudges",
+      );
       const { sendReengagementNudges } = await import("./reengagement-nudges.server");
-      nudged += await sendReengagementNudges(admin as never);
+      nudged += await withTimeout(sendReengagementNudges(admin as never), 45_000, "sendReengagementNudges");
     } catch (e) {
       errors++;
       console.error("coach upkeep failed", e);
@@ -292,7 +304,21 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
           await Promise.all(
             slice.map(async (uid) => {
               try {
-                const s = await runAutopilotForUser(admin as never, uid, recs.opportunities, brainResult.exit.perAsset, metrics.regime);
+                // Every exchange/wallet fetch runAutopilotForUser can reach
+                // already has its own per-request timeout, but nothing
+                // previously bounded the user's TOTAL time — a user with
+                // several connected venues pays each timeout in sequence
+                // (syncPortfolio reads them one at a time), and with a
+                // 5-wide batch, one slow user still holds up the other 4
+                // until it individually times out or errors. This caps the
+                // whole per-user run so one account can't stall a batch
+                // indefinitely, the same failure mode already fixed for the
+                // learning-loop queries above.
+                const s = await withTimeout(
+                  runAutopilotForUser(admin as never, uid, recs.opportunities, brainResult.exit.perAsset, metrics.regime),
+                  45_000,
+                  `runAutopilotForUser:${uid}`,
+                );
                 autopilot.proposed += s.proposed;
                 autopilot.executed += s.executed;
                 autopilot.blocked += s.blocked;
