@@ -108,7 +108,10 @@ export function rankBaselineSymbolsOkx(arr: OkxTicker24h[], limit: number): Arra
 
 async function fetchBaselineFromOkx(limit: number): Promise<Array<{ symbol: string; ticker: Ticker }>> {
   const res = await marketFetch(`${OKX_REST}/market/tickers?instType=SPOT`);
-  if (!res.ok) throw new Error(`OKX market/tickers HTTP ${res.status}`);
+  if (!res.ok) {
+    res.body?.cancel().catch(() => {});
+    throw new Error(`OKX market/tickers HTTP ${res.status}`);
+  }
   const json = (await res.json()) as { data?: OkxTicker24h[] };
   return rankBaselineSymbolsOkx(json.data ?? [], limit);
 }
@@ -153,7 +156,10 @@ export function rankBaselineSymbolsBybit(arr: BybitTicker24h[], limit: number): 
 
 async function fetchBaselineFromBybit(limit: number): Promise<Array<{ symbol: string; ticker: Ticker }>> {
   const res = await marketFetch(`${BYBIT_REST}/market/tickers?category=spot`);
-  if (!res.ok) throw new Error(`Bybit market/tickers HTTP ${res.status}`);
+  if (!res.ok) {
+    res.body?.cancel().catch(() => {});
+    throw new Error(`Bybit market/tickers HTTP ${res.status}`);
+  }
   const json = (await res.json()) as { result?: { list?: BybitTicker24h[] } };
   return rankBaselineSymbolsBybit(json.result?.list ?? [], limit);
 }
@@ -184,7 +190,10 @@ interface ExchangeSymbolInfo {
  */
 async function loadTradeableSpotUsdtSymbols(): Promise<Set<string>> {
   const res = await marketFetch(`${BINANCE_REST}/exchangeInfo?permissions=SPOT`);
-  if (!res.ok) throw new Error(`exchangeInfo HTTP ${res.status}`);
+  if (!res.ok) {
+    res.body?.cancel().catch(() => {});
+    throw new Error(`exchangeInfo HTTP ${res.status}`);
+  }
   const json = (await res.json()) as { symbols: ExchangeSymbolInfo[] };
   const set = new Set<string>();
   for (const s of json.symbols) {
@@ -228,7 +237,10 @@ async function fetchBaselineFromBinance(limit: number): Promise<Array<{ symbol: 
     cached("binance-tradeable-usdt-symbols", { ttlMs: 6 * 3600_000, staleMs: 24 * 3600_000 }, loadTradeableSpotUsdtSymbols),
     (async () => {
       const res = await marketFetch(`${BINANCE_REST}/ticker/24hr`);
-      if (!res.ok) throw new Error(`ticker/24hr HTTP ${res.status}`);
+      if (!res.ok) {
+        res.body?.cancel().catch(() => {});
+        throw new Error(`ticker/24hr HTTP ${res.status}`);
+      }
       return (await res.json()) as BinanceTicker24h[];
     })(),
   ]);

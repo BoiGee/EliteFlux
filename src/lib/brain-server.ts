@@ -310,7 +310,10 @@ async function loadTickers(): Promise<{ tickers: Record<string, Ticker>; tickerS
 async function fetchGlobal() {
   try {
     const r = await marketFetch(`${COINGECKO}/global`);
-    if (!r.ok) throw new Error(`global HTTP ${r.status}`);
+    if (!r.ok) {
+      r.body?.cancel().catch(() => {});
+      throw new Error(`global HTTP ${r.status}`);
+    }
     const j = await r.json();
     const d = j.data;
     return {
@@ -323,7 +326,10 @@ async function fetchGlobal() {
     // Independent source, so a throttled aggregator can't blank the header stats.
     try {
       const r = await marketFetch(`${PAPRIKA}/global`);
-      if (!r.ok) return null;
+      if (!r.ok) {
+        r.body?.cancel().catch(() => {});
+        return null;
+      }
       const g = (await r.json()) as {
         bitcoin_dominance_percentage?: number;
         market_cap_usd?: number;
@@ -347,7 +353,10 @@ async function fetchGlobal() {
 async function fetchFng(): Promise<{ score: number; label: SentimentLabel } | null> {
   try {
     const r = await marketFetch(FNG);
-    if (!r.ok) return null;
+    if (!r.ok) {
+      r.body?.cancel().catch(() => {});
+      return null;
+    }
 
     const j = await r.json();
     const item = j.data?.[0];
