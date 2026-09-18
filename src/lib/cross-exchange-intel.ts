@@ -16,7 +16,15 @@ const OKX_TICKERS = "https://www.okx.com/api/v5/market/tickers?instType=SPOT";
 /** One call covers every OKX spot pair — same shape as the Binance all-symbols reads elsewhere. */
 export async function fetchOkxPrices(): Promise<Map<string, number> | null> {
   try {
-    const res = await fetch(OKX_TICKERS, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+    // No timeout here previously could hang the whole evaluate-alerts cycle
+    // indefinitely on a single stalled response — this call sits in every
+    // cycle's Promise.all, and its own try/catch only guards against a
+    // rejection, not a connection that never settles at all.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(OKX_TICKERS, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
+      clearTimeout(timer),
+    );
     if (!res.ok) return null;
     const json = (await res.json()) as { code?: string; data?: { instId: string; last: string }[] };
     if (json.code !== "0" || !json.data) return null;

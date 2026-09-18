@@ -45,9 +45,14 @@ function parseExpiry(code: string): Date | null {
 
 async function fetchOptionsChain(currency: TrackedCurrency): Promise<DeribitInstrument[] | null> {
   try {
+    // No timeout here previously could hang the whole evaluate-alerts cycle
+    // indefinitely on a single stalled response.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const res = await fetch(`${DERIBIT}?currency=${currency}&kind=option`, {
       headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     if (!res.ok) return null;
     const json = (await res.json()) as { result?: DeribitInstrument[] };
     return json.result ?? null;

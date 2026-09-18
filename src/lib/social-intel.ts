@@ -44,7 +44,13 @@ export type RawTrendingData = RawTrendingItem[] | null;
 
 export async function fetchTrendingData(): Promise<RawTrendingData> {
   try {
-    const res = await fetch(TRENDING_URL, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+    // No timeout here previously could hang the whole evaluate-alerts cycle
+    // indefinitely — this call sits in every cycle's Promise.all.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(TRENDING_URL, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
+      clearTimeout(timer),
+    );
     if (!res.ok) return null;
     const json = (await res.json()) as { coins?: RawTrendingItem[] };
     return json.coins ?? null;

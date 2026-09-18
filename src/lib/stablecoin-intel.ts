@@ -39,7 +39,14 @@ export async function fetchStablecoinSupplies(): Promise<StablecoinReading[] | n
       throttledEtherscanCall(async () => {
         try {
           const url = `${ETHERSCAN_V2}&module=stats&action=tokensupply&contractaddress=${t.contract}&apikey=${apiKey}`;
-          const res = await fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+          // throttledEtherscanCall serializes every caller through one
+          // shared, module-level queue — if this fetch never settles, that
+          // queue is permanently stuck for every future call on this isolate.
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8_000);
+          const res = await fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() =>
+            clearTimeout(timer),
+          );
           if (!res.ok) return null;
           const json = (await res.json()) as { status: string; result: string };
           if (json.status !== "1") return null;

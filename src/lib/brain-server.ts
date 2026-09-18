@@ -40,13 +40,23 @@ const FNG = "https://api.alternative.me/fng/?limit=1";
  * rejected outright by some providers (HTTP 403 "add a descriptive
  * User-Agent"), which is fatal for the cron cycle.
  */
+const FETCH_TIMEOUT_MS = 8_000;
+
+// No fetch() in this pipeline previously had a timeout — a single stalled
+// upstream response (no error, just never resolving) could hang the whole
+// evaluate-alerts cycle indefinitely, since Promise.all waits for every
+// promise to settle and nothing here was racing against a clock. Confirmed
+// live: jobs were sitting in "running" for 10+ minutes with no error logged.
 function marketFetch(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   return fetch(url, {
     headers: {
       "User-Agent": "EliteFlux/1.0 (+https://elite-flux.com)",
       Accept: "application/json",
     },
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 }
 
 async function readJson<T>(url: string, label: string): Promise<T> {
@@ -433,8 +443,11 @@ export async function getUpstreamMarketData(): Promise<UpstreamMarketData> {
   // Long TTL + long stale window: page views must never translate into
   // upstream calls, which is what got our backend rate-limited.
   return cached("upstream-market", { ttlMs: 60_000, staleMs: 15 * 60_000 }, async () => {
+    const t0 = Date.now();
+    console.log("[diag] getUpstreamMarketData: starting cold fetch");
     const { fetchBaselineUniverse } = await import("./baseline-universe.server");
     const [tickerRead, global, fng, baseline] = await Promise.all([loadTickers(), fetchGlobal(), fetchFng(), fetchBaselineUniverse()]);
+    console.log(`[diag] getUpstreamMarketData: Promise.all resolved after ${Date.now() - t0}ms, tickerSource=${tickerRead.tickerSource}, baseline=${baseline ? "ok" : "null"}`);
 
     // Keep a durable last-good reading so a total provider outage degrades
     // into stale prices instead of a dead dashboard.

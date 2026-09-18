@@ -23,10 +23,19 @@ interface DailySeries {
   closes: number[];
 }
 
+// No timeout here previously could hang the whole evaluate-alerts cycle
+// indefinitely on a single stalled response.
+function timedFetch(url: string, headers: Record<string, string>): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  return fetch(url, { headers, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function fetchYahooDaily(symbol: string): Promise<DailySeries | null> {
   try {
-    const res = await fetch(`${YAHOO}/${symbol}?range=3mo&interval=1d`, {
-      headers: { "User-Agent": "Mozilla/5.0 (EliteFlux/1.0)", Accept: "application/json" },
+    const res = await timedFetch(`${YAHOO}/${symbol}?range=3mo&interval=1d`, {
+      "User-Agent": "Mozilla/5.0 (EliteFlux/1.0)",
+      Accept: "application/json",
     });
     if (!res.ok) return null;
     const json = (await res.json()) as {
@@ -52,8 +61,9 @@ async function fetchYahooDaily(symbol: string): Promise<DailySeries | null> {
 
 async function fetchBtcDaily(days = 90): Promise<DailySeries | null> {
   try {
-    const res = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}&interval=daily`, {
-      headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" },
+    const res = await timedFetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}&interval=daily`, {
+      "User-Agent": "EliteFlux/1.0",
+      Accept: "application/json",
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { prices?: [number, number][] };

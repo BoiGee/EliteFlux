@@ -28,8 +28,18 @@ const OKX_REST = "https://www.okx.com/api/v5";
 const BYBIT_REST = "https://api.bybit.com/v5";
 const BINANCE_REST = "https://api.binance.com/api/v3";
 
+const FETCH_TIMEOUT_MS = 8_000;
+
+// No fetch() in the wider pipeline previously had a timeout — a single
+// stalled upstream response could hang the whole evaluate-alerts cycle
+// indefinitely, since nothing here raced against a clock. Confirmed live:
+// jobs sitting in "running" for 10+ minutes with no error logged.
 function marketFetch(url: string): Promise<Response> {
-  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0 (+https://elite-flux.com)", Accept: "application/json" } });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0 (+https://elite-flux.com)", Accept: "application/json" }, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
 }
 
 // Neither OKX nor Bybit tags "stablecoin" or "leveraged" in their public

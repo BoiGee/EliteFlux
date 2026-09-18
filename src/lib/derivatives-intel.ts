@@ -50,8 +50,15 @@ export interface RawDerivativesData {
 
 const FUTURES_REST = "https://fapi.binance.com/fapi/v1";
 
+// No timeout here previously could hang the whole evaluate-alerts cycle
+// indefinitely — this fans out to up to ~20 concurrent per-symbol Binance
+// calls every cycle, and Binance blocks this Worker's egress (confirmed
+// live), so a single stalled connection among them blocks the entire
+// Promise.all below forever.
 function futuresFetch(url: string): Promise<Response> {
-  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 /**

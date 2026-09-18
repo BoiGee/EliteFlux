@@ -34,8 +34,15 @@ interface RawDepth {
   asks: [string, string][];
 }
 
+// No timeout here previously could hang the whole evaluate-alerts cycle
+// indefinitely — this fans out to ~20 concurrent per-symbol Binance calls
+// every cycle, and Binance blocks this Worker's egress (confirmed live), so
+// a single stalled connection among them blocks the entire Promise.all
+// below forever.
 function depthFetch(url: string): Promise<Response> {
-  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" } });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  return fetch(url, { headers: { "User-Agent": "EliteFlux/1.0", Accept: "application/json" }, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 export type RawOrderBookData = Map<string, RawDepth>;
