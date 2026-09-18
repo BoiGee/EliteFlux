@@ -7,6 +7,34 @@ import { beginRun, finishRun } from "./system-runs.server";
 
 type Admin = { from: (t: string) => any };
 
+/**
+ * Safety net: every fetch() in the market-intelligence pipeline now has its
+ * own timeout, but getBrainSnapshotCached() also fans out ~10 concurrent
+ * Supabase queries (stablecoin/confluence/options/community-trust/crowd
+ * intel) with none of them individually timed. Confirmed live: a job can
+ * still sit past its own per-request timeouts with zero checkpoint logs
+ * reached, meaning something in that chain can still hang unboundedly. This
+ * doesn't stop the underlying work (there's no cancellation), but it
+ * guarantees the caller stops waiting and reaches finishRun within a bounded
+ * time instead of getting force-killed by Cloudflare's own wall-time limit
+ * with no record of what happened.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 // ---------------------------------------------------------------------------
 // evaluate-alerts
 // ---------------------------------------------------------------------------
@@ -53,7 +81,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
     let metrics;
     let brainResult;
     try {
-      brainResult = await getBrainSnapshotCached();
+      brainResult = await withTimeout(getBrainSnapshotCached(), 60_000, "getBrainSnapshotCached");
       mark("getBrainSnapshotCached done");
       metrics = buildAlertMetrics(brainResult);
     } catch (e) {
@@ -485,7 +513,7 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
   try {
     let metrics;
     try {
-      metrics = buildAlertMetrics(await getBrainSnapshotCached());
+      metrics = buildAlertMetrics(await withTimeout(getBrainSnapshotCached(), 60_000, "getBrainSnapshotCached"));
       mark("getBrainSnapshotCached done");
     } catch (e) {
       await finishRun(admin, run, { status: "skipped", detail: { msg: e instanceof Error ? e.message : "unknown" } });
