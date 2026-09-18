@@ -201,6 +201,7 @@ export type Database = {
           created_at: string
           decided_at: string | null
           executed_at: string | null
+          executing_since: string | null
           expires_at: string | null
           guardrail_verdict: Json | null
           id: string
@@ -222,6 +223,7 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           executed_at?: string | null
+          executing_since?: string | null
           expires_at?: string | null
           guardrail_verdict?: Json | null
           id?: string
@@ -243,6 +245,7 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           executed_at?: string | null
+          executing_since?: string | null
           expires_at?: string | null
           guardrail_verdict?: Json | null
           id?: string
@@ -1323,6 +1326,7 @@ export type Database = {
         | "failed"
         | "expired"
         | "blocked"
+        | "unknown"
       alert_channel: "in_app" | "email" | "telegram" | "webhook"
       alert_trigger:
         | "flux_score"
@@ -1492,6 +1496,7 @@ export const Constants = {
         "failed",
         "expired",
         "blocked",
+        "unknown",
       ],
       alert_channel: ["in_app", "email", "telegram", "webhook"],
       alert_trigger: [

@@ -244,12 +244,17 @@ export async function loadPortfolioView(db: DB, userId: string): Promise<Portfol
     .select("symbol,amount,usd_value")
     .eq("user_id", userId);
 
-  const bySymbol = new Map<string, { amount: number; usdValue: number }>();
+  const bySymbol = new Map<string, { amount: number; usdValue: number; pricingUnknown: boolean }>();
   for (const h of (data ?? []) as { symbol: string; amount: number; usd_value: number | null }[]) {
     const key = h.symbol.toUpperCase();
-    const cur = bySymbol.get(key) ?? { amount: 0, usdValue: 0 };
+    const cur = bySymbol.get(key) ?? { amount: 0, usdValue: 0, pricingUnknown: false };
     cur.amount += Number(h.amount) || 0;
     cur.usdValue += Number(h.usd_value) || 0;
+    // A held-but-unpriced row (fetchPrices had no quote for this symbol)
+    // stores usd_value: null — collapsing that straight to 0 here would make
+    // a real position indistinguishable from a genuine zero. See
+    // PortfolioPosition.pricingUnknown for why this matters downstream.
+    if (h.usd_value === null && (Number(h.amount) || 0) > 0) cur.pricingUnknown = true;
     bySymbol.set(key, cur);
   }
 
@@ -268,6 +273,7 @@ export async function loadPortfolioView(db: DB, userId: string): Promise<Portfol
         amount: v.amount,
         usdValue: v.usdValue,
         weight: totalUsd > 0 ? (v.usdValue / totalUsd) * 100 : 0,
+        pricingUnknown: v.pricingUnknown,
       }))
       .sort((a, b) => b.usdValue - a.usdValue),
   };

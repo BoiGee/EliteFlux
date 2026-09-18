@@ -62,14 +62,24 @@ async function trackDrawdown(
   return ((peakPortfolioUsd - currentTotalUsd) / peakPortfolioUsd) * 100;
 }
 
-/** Trades already executed today, used by the daily guardrails. */
+// A row reconciled from a stuck 'executing' state (see
+// reconcileStuckAutopilotActions) lands at 'unknown' — we genuinely don't
+// know whether the venue filled it before the write that would have marked
+// it 'executed' was lost. Counting it toward daily guardrails is the
+// conservative direction: it can only make future trades MORE restricted,
+// never less, and a real filled trade silently not counting toward the
+// user's own daily-trade/cooldown/daily-USD limits was the actual risk this
+// closes (confirmed live via code audit).
+const COUNTS_AS_EXECUTED = ["executed", "unknown"] as const;
+
+/** Trades already executed today (or of unresolved fate), used by the daily guardrails. */
 export async function todayUsage(db: DB, userId: string): Promise<DayUsage> {
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
   const { data } = await db
     .from("autopilot_actions")
     .select("notional_usd")
     .eq("user_id", userId)
-    .eq("state", "executed")
+    .in("state", COUNTS_AS_EXECUTED)
     .gte("executed_at", since);
   const rows = (data ?? []) as { notional_usd: number | null }[];
   return {
@@ -84,7 +94,7 @@ async function hoursSinceLastTrade(db: DB, userId: string, symbol: string): Prom
     .select("executed_at")
     .eq("user_id", userId)
     .eq("symbol", symbol)
-    .eq("state", "executed")
+    .in("state", COUNTS_AS_EXECUTED)
     .order("executed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -234,7 +244,7 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
   // with "failed". Only the caller whose UPDATE actually flips the row wins.
   const claim = await db
     .from("autopilot_actions")
-    .update({ state: "executing" } as never)
+    .update({ state: "executing", executing_since: new Date().toISOString() } as never)
     .eq("id", actionId)
     .eq("user_id", userId)
     .in("state", ["proposed", "approved"])
@@ -358,6 +368,63 @@ export async function executeAction(db: DB, userId: string, actionId: string) {
   return order.ok
     ? { ok: true, paper: false, notionalUsd: notional, orderId: order.orderId }
     : { ok: false, error: order.isDuplicate ? (orderResult as { note?: string }).note! : (order.error ?? "Order rejected.") };
+}
+
+// Real execution (placeSpotOrder + the state-flipping UPDATE above) usually
+// completes in well under a second once a user's connections/prices are
+// warm — even a slow venue call is bounded by its own ~8s fetch timeout.
+// Comfortably longer than any legitimate run, short enough that a stuck row
+// doesn't sit unresolved (and invisible to guardrail counting) for long.
+const STUCK_EXECUTING_MS = 5 * 60_000;
+
+/**
+ * Sweeps every user's autopilot_actions for rows stuck at state='executing'
+ * — see the 20260918210000 migration's own comment for the full mechanism
+ * (withTimeout races the whole per-user run without cancelling the
+ * underlying work, so a timed-out run can abandon a claimed action between
+ * placeSpotOrder returning and the final state-flipping UPDATE landing).
+ * Reconciles each one to 'unknown' rather than guessing 'executed'/'failed'
+ * outright — a human should check the venue's own order history for what
+ * actually happened — while still making it count toward that user's daily
+ * guardrails (see COUNTS_AS_EXECUTED) so a real, possibly-filled trade can't
+ * silently evade their own configured limits. Global, not per-user — meant
+ * to run once per cron cycle, not once per user in the per-user loop.
+ */
+export async function reconcileStuckAutopilotActions(db: DB): Promise<{ reconciled: number }> {
+  const cutoff = new Date(Date.now() - STUCK_EXECUTING_MS).toISOString();
+  const { data: stuck } = await db
+    .from("autopilot_actions")
+    .select("id,user_id,executing_since")
+    .eq("state", "executing")
+    .lt("executing_since", cutoff)
+    .limit(200);
+
+  const rows = (stuck ?? []) as { id: string; user_id: string; executing_since: string | null }[];
+  if (!rows.length) return { reconciled: 0 };
+
+  const nowIso = new Date().toISOString();
+  const ids = rows.map((r) => r.id);
+  const { error } = await db
+    .from("autopilot_actions")
+    .update({
+      state: "unknown",
+      // executed_at drives both todayUsage's window filter and
+      // hoursSinceLastTrade's ordering — without it a reconciled row would
+      // be silently excluded from the very guardrail counting this exists
+      // to protect. Using now() (reconciliation time) rather than
+      // executing_since is deliberately the more conservative of the two:
+      // it's never earlier than when the order was actually placed, so it
+      // can only make the cooldown/daily-window checks stricter, not looser.
+      executed_at: nowIso,
+    } as never)
+    .in("id", ids)
+    .eq("state", "executing"); // re-check state so this can't clobber a row that finished between the select and here
+  if (error) return { reconciled: 0 };
+
+  for (const r of rows) {
+    await audit(db, r.user_id, "execution_reconciled_unknown", { executing_since: r.executing_since, cutoff }, r.id);
+  }
+  return { reconciled: rows.length };
 }
 
 /**

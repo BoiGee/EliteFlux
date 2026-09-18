@@ -11,6 +11,17 @@ export type PortfolioPosition = {
   amount: number;
   usdValue: number;
   weight: number; // 0..100
+  /**
+   * True when usdValue is a real 0 held-but-worthless artifact of a pricing
+   * gap, not a genuine zero position — fetchPrices failed for this symbol
+   * and portfolio.server.ts's loadPortfolioView has no way to distinguish
+   * "unpriced" from "actually zero" once it's collapsed to a number. Without
+   * this flag, an exit-intel signal wanting OUT of a real, held, risky asset
+   * would fail the position_exists guardrail check with a misleading "not
+   * held" reason instead of the true "pricing unavailable" — confirmed live
+   * via code audit as a real failure mode, not hypothetical.
+   */
+  pricingUnknown: boolean;
 };
 
 export type PortfolioView = {
@@ -158,9 +169,24 @@ export function checkGuardrails(
   } else {
     const pos = portfolio.positions.find((p) => p.symbol.toUpperCase() === sym);
     capped = Math.min(capped, pos?.usdValue ?? 0);
-    // Exits are allowed to clear the whole position regardless of size caps.
-    if (c.kind === "exit") capped = Math.min(c.notionalUsd, pos?.usdValue ?? 0);
-    add("position_exists", (pos?.usdValue ?? 0) > 0, pos ? `holding ${pos.usdValue.toFixed(2)} USD` : "not held");
+    // Exits are allowed to clear the whole position regardless of size caps —
+    // this must NOT also min() against c.notionalUsd, which is the proposal-
+    // time figure (up to 6h stale per expires_at). If price rose since
+    // proposal, the stale figure is smaller than the fresh position value,
+    // undersizing the exit and leaving part of it unsold — contradicting
+    // this comment's own stated intent. Confirmed live via code audit.
+    if (c.kind === "exit") capped = pos?.usdValue ?? 0;
+    // A genuinely held-but-unpriced position must not read as "not held" —
+    // that wording tells an operator EliteFlux has no visibility into the
+    // position at all, when the truth is it knows the holding exists and
+    // specifically can't price it right now. The trade still can't be safely
+    // USD-sized without a price (capped stays 0, so min_order_size below
+    // still blocks it), but the failure reason now says why.
+    if (pos?.pricingUnknown) {
+      add("position_exists", false, `holding ${pos.amount} ${sym} but its USD value is currently unpriceable — exit blocked until pricing recovers`);
+    } else {
+      add("position_exists", (pos?.usdValue ?? 0) > 0, pos ? `holding ${pos.usdValue.toFixed(2)} USD` : "not held");
+    }
   }
 
   add("daily_notional", dailyRemaining > 0, `${usage.notionalUsd.toFixed(0)}/${g.max_daily_usd} used today`);

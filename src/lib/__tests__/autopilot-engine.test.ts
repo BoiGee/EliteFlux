@@ -21,8 +21,8 @@ const portfolio: PortfolioView = {
   totalUsd: 10000,
   stableUsd: 4000,
   positions: [
-    { symbol: "ETH", amount: 1, usdValue: 3000, weight: 30 },
-    { symbol: "SOL", amount: 10, usdValue: 1500, weight: 15 },
+    { symbol: "ETH", amount: 1, usdValue: 3000, weight: 30, pricingUnknown: false },
+    { symbol: "SOL", amount: 10, usdValue: 1500, weight: 15, pricingUnknown: false },
   ],
 };
 
@@ -69,7 +69,7 @@ describe("proposeActions", () => {
   it("skips buys for positions already sized in", () => {
     const heavy: PortfolioView = {
       ...portfolio,
-      positions: [{ symbol: "BTC", amount: 1, usdValue: 5000, weight: 50 }],
+      positions: [{ symbol: "BTC", amount: 1, usdValue: 5000, weight: 50, pricingUnknown: false }],
     };
     expect(proposeActions([opp({})], heavy, guardrails)).toHaveLength(0);
   });
@@ -223,6 +223,34 @@ describe("checkGuardrails", () => {
       null,
     );
     expect(v.cappedNotional).toBe(3000);
+  });
+
+  it("sizes an exit off the fresh position value, not a stale proposal-time notional", () => {
+    // The candidate's notionalUsd is whatever was computed when the action
+    // was proposed (up to 6h earlier, per expires_at) — if price rose since
+    // then, the live position is worth more than that stale figure. An exit
+    // must still clear the whole live position, not the smaller stale one.
+    const v = checkGuardrails(
+      candidate({ kind: "exit", symbol: "ETH", notionalUsd: 2000 }),
+      guardrails,
+      portfolio, // ETH position is 3000 USD live
+      zeroUsage,
+      null,
+      null,
+    );
+    expect(v.cappedNotional).toBe(3000);
+  });
+
+  it("blocks an exit on a held-but-unpriced position with an honest reason, not 'not held'", () => {
+    const unpriced: PortfolioView = {
+      ...portfolio,
+      positions: [{ symbol: "ETH", amount: 1, usdValue: 0, weight: 0, pricingUnknown: true }],
+    };
+    const v = checkGuardrails(candidate({ kind: "exit", symbol: "ETH" }), guardrails, unpriced, zeroUsage, null, null);
+    expect(v.passed).toBe(false);
+    expect(v.reason).toContain("position_exists");
+    expect(v.reason?.toLowerCase()).not.toContain("not held");
+    expect(v.reason?.toLowerCase()).toContain("unpriceable");
   });
 
   it("blocks dust-sized orders", () => {
