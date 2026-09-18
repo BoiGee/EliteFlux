@@ -139,32 +139,10 @@ export interface AccuracyRow {
 }
 
 /** Aggregate the scoreboard for the accuracy dashboard and the calibrator. */
-export async function loadAccuracy(
-  admin: Admin,
-  opts: { days?: number; horizon?: number; regime?: string; untilDaysAgo?: number } = {},
-): Promise<AccuracyRow[]> {
-  const days = opts.days ?? 30;
-  const since = new Date(Date.now() - days * 86400_000).toISOString();
-  let q = admin
-    .from("signal_outcomes")
-    .select("signal_type,horizon_hours,forward_return_pct,hit")
-    .gte("resolved_at", since)
-    .limit(20000);
-  if (opts.horizon) q = q.eq("horizon_hours", opts.horizon);
-  if (opts.regime) q = q.eq("regime", opts.regime);
-  if (opts.untilDaysAgo) {
-    const until = new Date(Date.now() - opts.untilDaysAgo * 86400_000).toISOString();
-    q = q.lt("resolved_at", until);
-  }
-  const { data } = await q;
-
-  const rows = (data ?? []) as {
-    signal_type: string;
-    horizon_hours: number;
-    forward_return_pct: number | null;
-    hit: boolean | null;
-  }[];
-
+/** Shared bucketing logic — group into signal_type|horizon buckets and derive hitRate/avgReturnPct. */
+function bucketAccuracyRows(
+  rows: { signal_type: string; horizon_hours: number; forward_return_pct: number | null; hit: boolean | null }[],
+): AccuracyRow[] {
   const buckets = new Map<string, { samples: number; hits: number; ret: number }>();
   for (const r of rows) {
     if (r.hit === null) continue;
@@ -189,6 +167,68 @@ export async function loadAccuracy(
       };
     })
     .sort((a, b) => b.samples - a.samples);
+}
+
+export async function loadAccuracy(
+  admin: Admin,
+  opts: { days?: number; horizon?: number; regime?: string; untilDaysAgo?: number } = {},
+): Promise<AccuracyRow[]> {
+  const days = opts.days ?? 30;
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  let q = admin
+    .from("signal_outcomes")
+    .select("signal_type,horizon_hours,forward_return_pct,hit")
+    .gte("resolved_at", since)
+    .limit(20000);
+  if (opts.horizon) q = q.eq("horizon_hours", opts.horizon);
+  if (opts.regime) q = q.eq("regime", opts.regime);
+  if (opts.untilDaysAgo) {
+    const until = new Date(Date.now() - opts.untilDaysAgo * 86400_000).toISOString();
+    q = q.lt("resolved_at", until);
+  }
+  const { data } = await q;
+  return bucketAccuracyRows((data ?? []) as { signal_type: string; horizon_hours: number; forward_return_pct: number | null; hit: boolean | null }[]);
+}
+
+interface RawAccuracyRow {
+  signal_type: string;
+  horizon_hours: number;
+  forward_return_pct: number | null;
+  hit: boolean | null;
+  regime: string | null;
+  resolved_at: string;
+}
+
+/**
+ * Fetch every resolved outcome in the last `days`, once, including regime
+ * and resolved_at — for a caller that needs several different (day-window,
+ * regime) slices of the same underlying data (recomputeRecommendationWeights:
+ * a global 7d/60d pair plus a 14d/90d pair PER regime — 12 separate
+ * loadAccuracy queries previously), every slice can be derived from this one
+ * fetch via accuracySlice() below instead of one query per slice. Confirmed
+ * live this was a real contributor to "Too many subrequests by single
+ * Worker invocation" — each loadAccuracy call is one subrequest, and this
+ * function alone accounted for up to 12 of them every cold cycle.
+ */
+async function loadRawAccuracyRows(admin: Admin, days: number): Promise<RawAccuracyRow[]> {
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  const { data } = await admin
+    .from("signal_outcomes")
+    .select("signal_type,horizon_hours,forward_return_pct,hit,regime,resolved_at")
+    .gte("resolved_at", since)
+    .limit(20000);
+  return (data ?? []) as RawAccuracyRow[];
+}
+
+/** Derive one (days, regime) slice from rows already fetched by loadRawAccuracyRows — no query. */
+function accuracySlice(rows: RawAccuracyRow[], days: number, regime?: string): AccuracyRow[] {
+  const sinceMs = Date.now() - days * 86400_000;
+  const filtered = rows.filter((r) => {
+    if (new Date(r.resolved_at).getTime() < sinceMs) return false;
+    if (regime !== undefined && r.regime !== regime) return false;
+    return true;
+  });
+  return bucketAccuracyRows(filtered);
 }
 
 const SCORE_BANDS = [
@@ -517,13 +557,18 @@ export async function recomputeRecommendationWeights(
 }> {
   const { BASE_RECOMMENDATION_WEIGHTS } = await import("./recommendation-engine");
 
+  // One fetch (90 days — the widest window any slice below needs) instead of
+  // 12 separate loadAccuracy queries (a global 7d/60d pair, plus a 14d/90d
+  // pair for each of the 5 regimes below) — every slice is derived from this
+  // one result set in memory via accuracySlice(). See loadRawAccuracyRows's
+  // own comment for why this mattered live, not just in theory.
+  const rawAccuracyRows = await loadRawAccuracyRows(admin, 90);
+
   // No horizon filter — deriveWeightsForRows picks the best-performing
   // horizon per signal itself; fetching all four here costs nothing extra
   // (loadAccuracy returns every tracked horizon in one query either way).
-  const [recentRows, longRows] = await Promise.all([
-    loadAccuracy(admin, { days: 7 }),
-    loadAccuracy(admin, { days: 60 }),
-  ]);
+  const recentRows = accuracySlice(rawAccuracyRows, 7);
+  const longRows = accuracySlice(rawAccuracyRows, 60);
   const global = await deriveWeightsForRows(recentRows, longRows, BASE_RECOMMENDATION_WEIGHTS);
   const globalGate = await evaluateShipGate(admin, global.weights);
 
@@ -539,10 +584,8 @@ export async function recomputeRecommendationWeights(
   const regimeGates: Record<string, { ship: boolean; walkForward: string; backtest: string }> = {};
   await Promise.all(
     KNOWN_REGIMES.map(async (regime) => {
-      const [rRecent, rLong] = await Promise.all([
-        loadAccuracy(admin, { days: 14, regime }),
-        loadAccuracy(admin, { days: 90, regime }),
-      ]);
+      const rRecent = accuracySlice(rawAccuracyRows, 14, regime);
+      const rLong = accuracySlice(rawAccuracyRows, 90, regime);
       // Gate specifically off the 24h-horizon subset — rLong otherwise
       // contains all 4 tracked horizons per signal (same event, multiple
       // resolutions), which would multiply-count and make this gate too easy.
