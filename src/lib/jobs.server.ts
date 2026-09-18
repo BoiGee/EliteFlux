@@ -39,6 +39,12 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
   const run = await beginRun(admin, "evaluate-alerts");
   if (!run) return { ok: true, skipped: "another run is in progress" };
 
+  // TEMPORARY diagnostic — pinpointing which stage of this job is taking so
+  // long that it's missing finishRun and getting cleaned up as stale.
+  // Revert once the cause is found.
+  const t0 = Date.now();
+  const mark = (label: string) => console.log(`[diag] evaluate-alerts: ${label} at +${Date.now() - t0}ms`);
+
   let errors = 0;
   let evaluated = 0;
   let fired = 0;
@@ -48,6 +54,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
     let brainResult;
     try {
       brainResult = await getBrainSnapshotCached();
+      mark("getBrainSnapshotCached done");
       metrics = buildAlertMetrics(brainResult);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown";
@@ -74,6 +81,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       ignition_score: metrics.ignitionScore,
       coins,
     });
+    mark("persistSnapshot done");
 
     const learning = { recorded: 0, resolved: 0, closed: 0, weightSamples: 0, drifting: [] as string[], modelsTrained: [] as string[] };
     let recWeights: Record<string, number> | undefined;
@@ -83,6 +91,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
         await import("./signal-tracking.server");
 
       learning.recorded = await recordSignalEvents(admin as never, buildSignalEvents(brainResult));
+      mark("recordSignalEvents done");
       // Signal events can now be recorded for coins outside the curated
       // flagship list (widened whale topSignals) — without a matching price
       // here, those events would never be able to resolve.
@@ -90,17 +99,20 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       const r = await resolveSignalOutcomes(admin as never, resolvePrices);
       learning.resolved = r.resolved;
       learning.closed = r.closed;
+      mark(`resolveSignalOutcomes done (resolved=${r.resolved})`);
 
       const calib = await recomputeRecommendationWeights(admin as never);
       // A regime-specific blend beats the global one once it has enough evidence.
       recWeights = calib.byRegime[metrics.regime]?.weights ?? calib.weights;
       learning.weightSamples = calib.sampleSize;
       learning.drifting = calib.drifting;
+      mark("recomputeRecommendationWeights done");
 
       // Closes the loop on the flagship flux_score — it's always been graded,
       // this is what lets that grade change the formula. Slow-burn: takes
       // real time to accumulate enough samples per layer to move anything.
       await recomputeEliteBrainWeights(admin as never).catch((e) => console.error("elite-brain weight recompute failed", e));
+      mark("recomputeEliteBrainWeights done");
 
       // Real trained model (logistic regression, gradient descent) alongside
       // the linear blend — cheap at today's data volume; move to a slower
@@ -108,9 +120,11 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       const { trainSignalCalibrationModels } = await import("./ml-model.server");
       const trainResult = await trainSignalCalibrationModels(admin as never);
       learning.modelsTrained = trainResult.trained;
+      mark("trainSignalCalibrationModels done");
     } catch (e) {
       console.error("signal learning cycle failed", e);
     }
+    mark("learning block done");
 
     let graded = 0;
     let nudged = 0;
@@ -142,6 +156,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       errors++;
       console.error("coach upkeep failed", e);
     }
+    mark("coach upkeep block done");
 
     const autopilot = { users: 0, proposed: 0, executed: 0, blocked: 0, halted: false };
     try {
@@ -222,6 +237,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       errors++;
       console.error("autopilot cycle failed", e);
     }
+    mark(`autopilot block done (users=${autopilot.users})`);
 
     const { deliverFiredAlerts } = await import("./alert-delivery.server");
     const firedItems: import("./alert-delivery.server").FiredAlertItem[] = [];
@@ -292,9 +308,11 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
 
       if (alerts.length < PAGE) break;
     }
+    mark(`alert loop done (evaluated=${evaluated}, fired=${fired})`);
 
     const { errors: deliveryErrors } = await deliverFiredAlerts(admin as never, firedItems);
     errors += deliveryErrors;
+    mark("deliverFiredAlerts done");
 
     await finishRun(admin, run, {
       status: errors ? "failed" : "ok",
@@ -303,6 +321,7 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       errors,
       detail: { graded, nudged, autopilot, learning },
     });
+    mark("finishRun done");
 
     return { ok: true, evaluated, fired, graded, nudged, autopilot, learning, errors, ts: nowIso };
   } catch (e) {
@@ -454,6 +473,11 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
   const run = await beginRun(admin, "evaluate-alerts-fast");
   if (!run) return { ok: true, skipped: "another run is in progress" };
 
+  // TEMPORARY diagnostic — same as runEvaluateAlertsJob. Revert once the
+  // cause is found.
+  const t0 = Date.now();
+  const mark = (label: string) => console.log(`[diag] evaluate-alerts-fast: ${label} at +${Date.now() - t0}ms`);
+
   let evaluated = 0;
   let fired = 0;
   let errors = 0;
@@ -462,6 +486,7 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
     let metrics;
     try {
       metrics = buildAlertMetrics(await getBrainSnapshotCached());
+      mark("getBrainSnapshotCached done");
     } catch (e) {
       await finishRun(admin, run, { status: "skipped", detail: { msg: e instanceof Error ? e.message : "unknown" } });
       return { ok: true, skipped: "no fresh market data" };
@@ -473,6 +498,7 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
       .eq("enabled", true)
       .in("trigger_type", [...FAST_TRIGGER_TYPES])
       .limit(1000);
+    mark("alerts query done");
 
     // Speed is a paid lever: only pro/elite get sub-minute delivery here. Free-tier
     // alerts on the same trigger types still fire — just on the 5-minute main cycle,
@@ -485,6 +511,7 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
     const fastLaneUsers = new Set(
       ((fastLaneSubs ?? []) as { user_id: string; tier: string }[]).map((s) => s.user_id),
     );
+    mark("subscriptions query done");
 
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
@@ -541,8 +568,11 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
       });
     }
 
+    mark(`alert loop done (evaluated=${evaluated}, fired=${fired})`);
+
     const { errors: deliveryErrors } = await deliverFiredAlerts(admin as never, firedItems);
     errors += deliveryErrors;
+    mark("deliverFiredAlerts done");
 
     await finishRun(admin, run, {
       status: errors ? "failed" : "ok",
