@@ -599,12 +599,31 @@ export async function getExtendedMarketData(
     const branches: (() => Promise<unknown>)[] = [
       derivativesThenOrderBook,
       () => logged("fetchTrendingData", fetchTrendingData(), null),
-      () => logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
+      // fetchOnChainFlows alone makes one Etherscan subrequest per (wallet,
+      // asset) pair — 7 watched wallets × 3 assets (native + 2 tracked
+      // tokens) = 21 subrequests, every time this whole batch's outer 90s
+      // cache is cold. Confirmed live as a real contributor to "Too many
+      // subrequests by single Worker invocation" (alongside order-book's
+      // now-fixed Binance fan-out). The underlying signal is a rolling
+      // 1-hour flow window that doesn't meaningfully change minute to
+      // minute, so — same pattern as macroPromise above — this gets its own
+      // longer-lived cache instead of paying for a fresh 21-call fan-out
+      // every time the outer cache happens to be cold.
       () =>
-        logged(
-          "getStablecoinSupplyIntel",
-          getStablecoinSupplyIntel(supabaseAdmin as never),
-          { perSymbol: {}, netLiquidityScore: 50, totalSupplyUsd: 0, generatedAt: Date.now() } as StablecoinSupplyIntel,
+        cached("onchain-flows", { ttlMs: 5 * 60_000, staleMs: 30 * 60_000 }, () =>
+          logged("fetchOnChainFlows", fetchOnChainFlows(ethPrice), null),
+        ),
+      // Same reasoning as onchain-flows above: 2 Etherscan calls (USDT/USDC
+      // total supply) plus a history-table read and a persist write, every
+      // time this batch's outer 90s cache is cold — supply doesn't move
+      // meaningfully minute to minute, so cache it on its own longer cycle.
+      () =>
+        cached("stablecoin-supply", { ttlMs: 5 * 60_000, staleMs: 30 * 60_000 }, () =>
+          logged(
+            "getStablecoinSupplyIntel",
+            getStablecoinSupplyIntel(supabaseAdmin as never),
+            { perSymbol: {}, netLiquidityScore: 50, totalSupplyUsd: 0, generatedAt: Date.now() } as StablecoinSupplyIntel,
+          ),
         ),
       () =>
         logged(
