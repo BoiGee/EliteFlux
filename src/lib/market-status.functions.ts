@@ -17,9 +17,17 @@ export const getServerSnapshotStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Not every market_snapshots row carries a real score — the fast cron
+    // (evaluate-alerts-fast, every minute) persists its own rows too, more
+    // often than the regular job that actually runs the full brain
+    // computation, so "most recent row" alone frequently lands on a
+    // null-score one. Filtering for a real score directly means this
+    // returns the last genuinely confirmed reading, not whichever row
+    // happens to be newest.
     const { data } = await supabaseAdmin
       .from("market_snapshots")
       .select("flux_score,regime,captured_at")
+      .not("flux_score", "is", null)
       .order("captured_at", { ascending: false })
       .limit(1)
       .maybeSingle();
