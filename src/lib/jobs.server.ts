@@ -596,15 +596,26 @@ export async function runSettlePaymentsJob(admin: Admin): Promise<SettlePayments
 // an exit-pressure spike, a price crossing a threshold). Reuses the same
 // cached brain snapshot the main cycle uses (45s TTL), so this doesn't add
 // upstream provider load — it just checks a narrower slice of alerts more
-// often. Deliberately skips the learning/autopilot/coach machinery that
-// makes the main cycle heavier than it needs to be for this.
+// often. Deliberately skips the learning/coach machinery that makes the
+// main cycle heavier than it needs to be for this. It does run one narrow
+// slice of Autopilot — proposeUrgentExits, a High-Exit-Pressure-only check
+// against each armed user's already-held positions (no exchange re-sync, no
+// ranked-opportunity pass) — so a fast-forming exit signal doesn't have to
+// wait for the 5-minute cycle. See runAutopilotForUser's fastExitOnly param.
 // ---------------------------------------------------------------------------
 
 const FAST_TRIGGER_TYPES = new Set(["momentum_change", "exit_pressure", "price_threshold"]);
 
 export type FastAlertsResult =
   | { ok: true; skipped: string }
-  | { ok: true; evaluated: number; fired: number; errors: number; deferredToMainCycle: number };
+  | {
+      ok: true;
+      evaluated: number;
+      fired: number;
+      errors: number;
+      deferredToMainCycle: number;
+      autopilotExits: { checked: number; proposed: number; executed: number };
+    };
 
 export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> {
   const { getBrainSnapshotCached, buildAlertMetrics } = await import("./brain-server");
@@ -625,8 +636,10 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
 
   try {
     let metrics;
+    let brainResult;
     try {
-      metrics = buildAlertMetrics(await withTimeout(getBrainSnapshotCached(), 60_000, "getBrainSnapshotCached"));
+      brainResult = await withTimeout(getBrainSnapshotCached(), 60_000, "getBrainSnapshotCached");
+      metrics = buildAlertMetrics(brainResult);
       mark("getBrainSnapshotCached done");
     } catch (e) {
       await finishRun(admin, run, { status: "skipped", detail: { msg: e instanceof Error ? e.message : "unknown" } });
@@ -729,14 +742,50 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
     errors += deliveryErrors;
     mark("deliverFiredAlerts done");
 
+    const autopilotExits = { checked: 0, proposed: 0, executed: 0 };
+    try {
+      const { data: ks } = await admin
+        .from("platform_settings")
+        .select("value")
+        .eq("key", "autopilot_kill_switch")
+        .maybeSingle();
+      if ((ks as { value: unknown } | null)?.value !== true) {
+        const { activeAutopilotUsers, runAutopilotForUser } = await import("./autopilot.server");
+        const users = await activeAutopilotUsers(admin as never);
+        autopilotExits.checked = users.length;
+        const CONCURRENCY = 5;
+        for (let i = 0; i < users.length; i += CONCURRENCY) {
+          const slice = users.slice(i, i + CONCURRENCY);
+          await Promise.all(
+            slice.map(async (uid) => {
+              try {
+                const res = await withTimeout(
+                  runAutopilotForUser(admin as never, uid, [], brainResult.exit.perAsset, metrics.regime, true),
+                  15_000,
+                  `runAutopilotForUser:fastExit:${uid}`,
+                );
+                autopilotExits.proposed += res.proposed;
+                autopilotExits.executed += res.executed;
+              } catch (e) {
+                console.error("fast-lane urgent exit check failed", uid, e);
+              }
+            }),
+          );
+        }
+      }
+    } catch (e) {
+      console.error("fast-lane autopilot exit sweep failed", e);
+    }
+    mark(`autopilot urgent-exit check done (checked=${autopilotExits.checked}, proposed=${autopilotExits.proposed})`);
+
     await finishRun(admin, run, {
       status: errors ? "failed" : "ok",
       evaluated,
       fired,
       errors,
-      detail: { deferredToMainCycle },
+      detail: { deferredToMainCycle, autopilotExits },
     });
-    return { ok: true, evaluated, fired, errors, deferredToMainCycle };
+    return { ok: true, evaluated, fired, errors, deferredToMainCycle, autopilotExits };
   } catch (e) {
     await finishRun(admin, run, {
       status: "failed",

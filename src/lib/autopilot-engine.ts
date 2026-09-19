@@ -123,6 +123,45 @@ export function proposeActions(
   return out.sort((a, b) => b.conviction - a.conviction);
 }
 
+/**
+ * Fast-lane companion to proposeActions, run from the 1-minute cycle instead
+ * of the 5-minute one. Deliberately narrower: only currently-held positions
+ * (not the ranked-opportunity universe, which needs a heavier pass this
+ * cadence shouldn't pay for) and only exit-intel's own High Exit Pressure
+ * band (>=81) — the same absolute threshold proposeActions uses for a full
+ * exit. No trims, no buys, and no stance/isHighRisk check (that reads from
+ * the recommendation engine, which only refreshes on the slower cycle) —
+ * those stay on the regular pass. This exists so a fast-forming exit signal
+ * on something already held doesn't sit unacted-on for up to 4 extra minutes
+ * just because the next full cycle hasn't run yet.
+ */
+export function proposeUrgentExits(
+  portfolio: PortfolioView,
+  exitPerAsset: Record<string, ExitAssetSignal | undefined>,
+  g: Guardrails,
+): Candidate[] {
+  const out: Candidate[] = [];
+  for (const pos of portfolio.positions) {
+    const sym = pos.symbol.toUpperCase();
+    if (isStable(sym) || pos.usdValue <= 0 || pos.amount <= 0) continue;
+    const sig = exitPerAsset[sym] ?? exitPerAsset[pos.symbol];
+    if (!sig || sig.exitPressureScore < 81) continue;
+    out.push({
+      kind: "exit",
+      symbol: sym,
+      conviction: Math.round(sig.exitPressureScore),
+      notionalUsd: pos.usdValue,
+      sizePct: 100,
+      // Informational only — execution re-prices from the live held value at
+      // the moment it actually sells (see executeAction), same as every
+      // other exit/trim candidate.
+      referencePrice: pos.usdValue / pos.amount,
+      rationale: `${sym} hit High Exit Pressure (${Math.round(sig.exitPressureScore)}${sig.tags?.length ? `, ${sig.tags.slice(0, 2).join(", ")}` : ""}) on the fast check. Rotating the position to ${g.stable_symbol} before the next full cycle.`,
+    });
+  }
+  return out.sort((a, b) => b.conviction - a.conviction);
+}
+
 /** Every check that must pass before an action may execute. */
 export function checkGuardrails(
   c: Candidate,
@@ -153,10 +192,21 @@ export function checkGuardrails(
     lastTradeAgoHours === null || lastTradeAgoHours >= g.cooldown_hours,
     lastTradeAgoHours === null ? "no recent trade" : `${lastTradeAgoHours.toFixed(1)}h since last ${sym} trade`,
   );
+  // Exempt from exit/trim: this breaker exists to stop new risk-taking once
+  // the account is already deep in a drawdown, not to trap the user in a
+  // losing position by blocking the very sell that would reduce it. Applying
+  // it unconditionally (as before) meant a real drawdown could silently
+  // block Autopilot's own protective exits at exactly the moment they
+  // mattered most — confirmed via code audit, no test previously covered the
+  // exit/trim case specifically.
   add(
     "drawdown_breaker",
-    drawdownPct === null || drawdownPct < g.drawdown_breaker_pct,
-    drawdownPct === null ? "no baseline" : `${drawdownPct.toFixed(1)}% vs ${g.drawdown_breaker_pct}% limit`,
+    c.kind !== "buy" || drawdownPct === null || drawdownPct < g.drawdown_breaker_pct,
+    c.kind !== "buy"
+      ? "exit/trim exempt — reduces risk, doesn't add it"
+      : drawdownPct === null
+        ? "no baseline"
+        : `${drawdownPct.toFixed(1)}% vs ${g.drawdown_breaker_pct}% limit`,
   );
 
   const pctCap = (portfolio.totalUsd * g.max_trade_pct) / 100;

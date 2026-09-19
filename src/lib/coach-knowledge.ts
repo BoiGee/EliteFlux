@@ -341,7 +341,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "autopilot",
     title: "Autopilot & the autonomy dial",
     where: "/autopilot",
-    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — even if nothing else about the position looks wrong yet. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
+    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. The drawdown guardrail only ever blocks new buys — it never blocks Autopilot's own protective exits or trims, so a bad stretch can't trap you in a losing position. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — rotating the position to your stable symbol — even if nothing else about the position looks wrong yet. The most urgent case (High Exit Pressure) is checked every minute, not just every 5 minutes, so a fast-forming exit signal doesn't sit unacted-on. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
     eli5: "A dial from 'just tell me' to 'do it for me', with a big red stop button you control.",
     plan: "elite",
     keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve"],
@@ -598,6 +598,12 @@ export const CHANGELOG: ChangeDoc[] = [
     title: "Pricing page now states real numbers, not just \"more\"",
     detail:
       "The Operator and Elite plan cards said things like \"a much larger Coach allowance\" and \"the largest Coach allowance\" without ever saying what that actually was. It's now spelled out: Free gets 1 Flux the AI Coach message a day, Operator gets 30, Elite gets 45. Alert caps are stated the same way — Free 3, Operator 15, Elite 100 — instead of being left out entirely on the paid tiers.",
+  },
+  {
+    date: "2026-09-19",
+    title: "Autopilot's drawdown limit could block its own protective exits — fixed",
+    detail:
+      "The drawdown guardrail was meant to stop new buying once your account had drawn down past your set limit, but it was actually checked against every action type — including the exit and trim orders Autopilot itself proposes to cut a losing position. In a real drawdown, that meant the guardrail could silently block the very sell that would have reduced it. It now only ever applies to new buys. Autopilot's fastest exit case — a position hitting High Exit Pressure — is also now checked every minute instead of every 5, so it doesn't sit waiting on the slower cycle.",
   },
   {
     date: "2026-09-19",

@@ -7,6 +7,7 @@ import { loadPortfolioView, syncPortfolio } from "./portfolio.server";
 import {
   checkGuardrails,
   proposeActions,
+  proposeUrgentExits,
   type Candidate,
   type DayUsage,
   type PortfolioView,
@@ -492,6 +493,21 @@ export async function runAutopilotForUser(
   opportunities: EliteOpportunity[],
   exitPerAsset: Record<string, ExitAssetSignal | undefined> = {},
   regime: string | null = null,
+  /**
+   * true from the 1-minute fast-alerts cycle: only the urgent "exit pressure
+   * already at the High band" case is checked (never trims or new buys), and
+   * the portfolio isn't re-synced against the exchange first — it reuses
+   * whatever the last regular (5-minute) cycle already stored, since a fresh
+   * exchange balance fetch for every armed user every single minute is the
+   * same class of cost that caused the subrequest-limit incidents earlier.
+   * Exit-pressure itself is already ~45s-fresh (brain-snapshot cache), so
+   * the staleness this trades away is only "did the user's holdings change
+   * in the last few minutes outside Autopilot" — narrow, and any mismatch
+   * just caps the sell to whatever's actually on record, per checkGuardrails.
+   * Point of this mode: a fast-forming exit signal no longer has to wait up
+   * to 4 extra minutes for the next full cycle before Autopilot can act on it.
+   */
+  fastExitOnly = false,
 ): Promise<{ proposed: number; executed: number; blocked: number }> {
   const stats = { proposed: 0, executed: 0, blocked: 0 };
   const { isFeatureEnabled } = await import("./platform.server");
@@ -504,15 +520,22 @@ export async function runAutopilotForUser(
   if (settings.level !== "approve" && settings.level !== "autopilot") return stats;
   if (settings.level === "autopilot" && !settings.armed) return stats;
 
-  try {
-    await syncPortfolio(db, userId);
-  } catch {
-    /* fall back to the last stored snapshot */
+  if (!fastExitOnly) {
+    try {
+      await syncPortfolio(db, userId);
+    } catch {
+      /* fall back to the last stored snapshot */
+    }
   }
   const portfolio = await loadPortfolioView(db, userId);
   if (portfolio.totalUsd <= 0) return stats;
 
-  const proposed = proposeActions(opportunities, portfolio, settings as Guardrails, exitPerAsset).slice(0, 5);
+  // fastExitOnly skips proposeActions entirely — it needs the ranked
+  // opportunity universe (a heavier pass this cadence shouldn't pay for) and
+  // this mode only ever wants the narrower, opportunities-independent check.
+  const proposed = fastExitOnly
+    ? proposeUrgentExits(portfolio, exitPerAsset, settings as Guardrails)
+    : proposeActions(opportunities, portfolio, settings as Guardrails, exitPerAsset).slice(0, 5);
   const candidates = await applyKellySizing(db, userId, portfolio, regime, proposed);
   for (const c of candidates) {
     const recorded = await recordCandidate(db, userId, c, settings, portfolio);

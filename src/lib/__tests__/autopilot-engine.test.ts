@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { checkGuardrails, isStable, proposeActions, type Candidate, type PortfolioView } from "../autopilot-engine";
+import {
+  checkGuardrails,
+  isStable,
+  proposeActions,
+  proposeUrgentExits,
+  type Candidate,
+  type PortfolioView,
+} from "../autopilot-engine";
 import { DEFAULT_SETTINGS, type Guardrails } from "../autonomy";
 import type { EliteOpportunity } from "../recommendation-engine";
 import type { ExitAssetSignal } from "../exit-intel";
@@ -130,6 +137,61 @@ describe("proposeActions", () => {
   });
 });
 
+describe("proposeUrgentExits", () => {
+  it("proposes a full exit for a held position at or above the High Exit Pressure band", () => {
+    const exitPerAsset = { ETH: { exitPressureScore: 81, tags: ["Smart Money Distribution"] } as ExitAssetSignal };
+    const out = proposeUrgentExits(portfolio, exitPerAsset, guardrails);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.kind).toBe("exit");
+    expect(out[0]?.symbol).toBe("ETH");
+    expect(out[0]?.notionalUsd).toBe(3000);
+    expect(out[0]?.sizePct).toBe(100);
+    expect(out[0]?.rationale).toContain(guardrails.stable_symbol);
+  });
+
+  it("does not trigger below the High Exit Pressure band, even in Reduce-Exposure territory", () => {
+    // Deliberately narrower than proposeActions: the fast lane only ever
+    // does full exits (>=81), never trims — trims stay on the slower,
+    // fully-synced cycle.
+    const exitPerAsset = { ETH: { exitPressureScore: 80 } as ExitAssetSignal };
+    expect(proposeUrgentExits(portfolio, exitPerAsset, guardrails)).toHaveLength(0);
+    const midBand = { SOL: { exitPressureScore: 65 } as ExitAssetSignal };
+    expect(proposeUrgentExits(portfolio, midBand, guardrails)).toHaveLength(0);
+  });
+
+  it("ignores symbols the user doesn't actually hold", () => {
+    const exitPerAsset = { DOGE: { exitPressureScore: 95 } as ExitAssetSignal };
+    expect(proposeUrgentExits(portfolio, exitPerAsset, guardrails)).toHaveLength(0);
+  });
+
+  it("never proposes exiting a stablecoin position", () => {
+    const stableHeld: PortfolioView = {
+      ...portfolio,
+      positions: [...portfolio.positions, { symbol: "USDT", amount: 500, usdValue: 500, weight: 5, pricingUnknown: false }],
+    };
+    const exitPerAsset = { USDT: { exitPressureScore: 99 } as ExitAssetSignal };
+    expect(proposeUrgentExits(stableHeld, exitPerAsset, guardrails)).toHaveLength(0);
+  });
+
+  it("skips a position with no usable value or amount rather than proposing a zero-size exit", () => {
+    const empty: PortfolioView = {
+      ...portfolio,
+      positions: [{ symbol: "ETH", amount: 0, usdValue: 0, weight: 0, pricingUnknown: false }],
+    };
+    const exitPerAsset = { ETH: { exitPressureScore: 90 } as ExitAssetSignal };
+    expect(proposeUrgentExits(empty, exitPerAsset, guardrails)).toHaveLength(0);
+  });
+
+  it("ranks multiple urgent exits by exit-pressure score", () => {
+    const exitPerAsset = {
+      ETH: { exitPressureScore: 85 } as ExitAssetSignal,
+      SOL: { exitPressureScore: 97 } as ExitAssetSignal,
+    };
+    const out = proposeUrgentExits(portfolio, exitPerAsset, guardrails);
+    expect(out.map((c) => c.symbol)).toEqual(["SOL", "ETH"]);
+  });
+});
+
 describe("checkGuardrails", () => {
   const zeroUsage = { trades: 0, notionalUsd: 0 };
 
@@ -174,7 +236,7 @@ describe("checkGuardrails", () => {
     expect(v.reason).toContain("cooldown");
   });
 
-  it("trips the drawdown breaker", () => {
+  it("trips the drawdown breaker on a buy", () => {
     const v = checkGuardrails(
       candidate({}),
       guardrails,
@@ -185,6 +247,36 @@ describe("checkGuardrails", () => {
     );
     expect(v.passed).toBe(false);
     expect(v.reason).toContain("drawdown_breaker");
+  });
+
+  it("does not let the drawdown breaker block an exit or trim", () => {
+    // The breaker exists to stop new risk-taking once the account is deep in
+    // a drawdown, not to trap the user in a losing position by blocking the
+    // very sell that would reduce it. A candidate that fails every other
+    // check for an unrelated reason would still show drawdown_breaker as the
+    // (or a) failure if this regressed, so assert the specific check passed
+    // rather than just v.passed overall.
+    const deepDrawdown = guardrails.drawdown_breaker_pct + 1;
+    const exitVerdict = checkGuardrails(
+      candidate({ kind: "exit", symbol: "ETH", notionalUsd: 3000 }),
+      guardrails,
+      portfolio,
+      zeroUsage,
+      null,
+      deepDrawdown,
+    );
+    const trimVerdict = checkGuardrails(
+      candidate({ kind: "trim", symbol: "SOL", notionalUsd: 500 }),
+      guardrails,
+      portfolio,
+      zeroUsage,
+      null,
+      deepDrawdown,
+    );
+    expect(exitVerdict.checks.find((c) => c.name === "drawdown_breaker")?.ok).toBe(true);
+    expect(trimVerdict.checks.find((c) => c.name === "drawdown_breaker")?.ok).toBe(true);
+    expect(exitVerdict.passed).toBe(true);
+    expect(trimVerdict.passed).toBe(true);
   });
 
   it("caps notional to the smallest applicable limit", () => {
