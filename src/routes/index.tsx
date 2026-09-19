@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { Sidebar, type ModuleKey, NAV_ITEMS } from "@/components/eliteflux/Sidebar";
 import { TopBar } from "@/components/eliteflux/TopBar";
 import { MarketOverview } from "@/components/eliteflux/MarketOverview";
@@ -132,6 +132,40 @@ function renderModule(key: ModuleKey) {
   }
 }
 
+/**
+ * Scoped to just the swappable module panel below, not the whole page — the
+ * app previously had no error boundary below the root route's (full-page,
+ * wipes Sidebar/TopBar/ticker too), so one module choking on an unexpected
+ * data shape from the live feed (market.tsx) took the entire dashboard chrome
+ * down with it. Resets itself when the user picks a different tab, so a
+ * crash on one module doesn't lock them out of the rest of the dashboard.
+ */
+class ModuleErrorBoundary extends Component<{ moduleKey: ModuleKey; children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error("dashboard module crashed", this.props.moduleKey, error);
+  }
+  componentDidUpdate(prevProps: { moduleKey: ModuleKey }) {
+    if (prevProps.moduleKey !== this.props.moduleKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="glass-panel p-6 text-center">
+          <p className="text-sm font-semibold text-foreground">This panel couldn't load.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Try a different tab, or refresh the page.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function DashboardInner() {
   const { isLive, lastUpdate, error } = useLiveMarket();
   const { tier } = useAuth();
@@ -188,7 +222,9 @@ function DashboardInner() {
           )}
 
           <div key={active} className="animate-rise">
-            {allowed ? renderModule(active) : <TierLockOverlay required={requiredTierFor(active)} />}
+            <ModuleErrorBoundary moduleKey={active}>
+              {allowed ? renderModule(active) : <TierLockOverlay required={requiredTierFor(active)} />}
+            </ModuleErrorBoundary>
           </div>
 
           <SiteFooter contained={false} />

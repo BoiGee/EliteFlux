@@ -50,6 +50,7 @@ export function TopBar({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             placeholder="Search coins, narratives, wallets..."
+            aria-label="Search coins, narratives, wallets"
             className="w-full h-10 pl-9 pr-3 rounded-lg bg-surface/60 border border-border/60 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition"
           />
         </div>
@@ -126,6 +127,7 @@ export function TopBar({
           <input
             autoFocus
             placeholder="Search coins, narratives, wallets..."
+            aria-label="Search coins, narratives, wallets"
             className="w-full h-10 pl-9 pr-3 rounded-lg bg-surface/60 border border-border/60 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition"
           />
         </div>

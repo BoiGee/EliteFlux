@@ -207,6 +207,7 @@ function AutopilotPage() {
                 <button
                   key={l.key}
                   disabled={locked || updateM.isPending}
+                  aria-pressed={active}
                   onClick={() => updateM.mutate({ level: l.key as AutonomyLevel })}
                   className={`text-left rounded-xl p-4 transition ring-1 ${
                     active
