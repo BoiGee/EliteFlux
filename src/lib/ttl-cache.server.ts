@@ -68,10 +68,3 @@ export async function cached<T>(key: string, opts: CacheOptions, load: () => Pro
 
   return inflight;
 }
-
-/** Age in ms of a cached key, or null when absent. */
-export function cacheAge(key: string): number | null {
-  const e = store.get(key);
-  if (!e || !e.at) return null;
-  return Date.now() - e.at;
-}

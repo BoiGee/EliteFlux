@@ -406,26 +406,41 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       }
 
       if (toInsert.length) {
-        const { data: inserted, error: insErr } = await admin.from("alert_history").insert(toInsert).select("id,alert_id");
-        if (insErr) {
-          errors++;
-        } else {
-          const historyIdByAlert = new Map(
-            ((inserted ?? []) as { id: string; alert_id: string }[]).map((r) => [r.alert_id, r.id]),
-          );
-          await admin.from("alerts").update({ last_triggered_at: nowIso }).in("id", firedAlertIds);
-          fired += pending.length;
-          for (const p of pending) {
-            firedItems.push({
-              userId: p.alert.user_id,
-              alertId: p.alert.id,
-              historyId: historyIdByAlert.get(p.alert.id) ?? null,
-              channels: ((p.alert.channels as never) ?? ["in_app"]) as never,
-              title: p.alert.name,
-              message: p.message,
-              payload: p.payload,
-            });
+        let inserted = (await admin.from("alert_history").insert(toInsert).select("id,alert_id")).data as
+          | { id: string; alert_id: string }[]
+          | null;
+        // A batch insert failing used to cost this whole page's worth of
+        // fired alerts (up to 500) instead of the one row actually at
+        // fault — a real fault-isolation regression from batching this,
+        // confirmed by a regression audit. Falls back to the old one-by-one
+        // behavior only on the rare path where the batch itself fails, so
+        // the common case still gets the reduced subrequest count.
+        if (!inserted) {
+          inserted = [];
+          for (const row of toInsert) {
+            const { data: single, error: singleErr } = await admin.from("alert_history").insert(row).select("id,alert_id").maybeSingle();
+            if (singleErr) errors++;
+            else if (single) inserted.push(single as { id: string; alert_id: string });
           }
+        }
+        const historyIdByAlert = new Map(inserted.map((r) => [r.alert_id, r.id]));
+        const confirmedIds = firedAlertIds.filter((id) => historyIdByAlert.has(id));
+        if (confirmedIds.length) {
+          await admin.from("alerts").update({ last_triggered_at: nowIso }).in("id", confirmedIds);
+        }
+        for (const p of pending) {
+          const historyId = historyIdByAlert.get(p.alert.id);
+          if (!historyId) continue; // this row's insert failed — don't count or deliver it
+          fired++;
+          firedItems.push({
+            userId: p.alert.user_id,
+            alertId: p.alert.id,
+            historyId,
+            channels: ((p.alert.channels as never) ?? ["in_app"]) as never,
+            title: p.alert.name,
+            message: p.message,
+            payload: p.payload,
+          });
         }
       }
 
