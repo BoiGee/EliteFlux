@@ -134,8 +134,19 @@ export function runEliteBrain(
     (categoryFlows.find((c) => c.id === "ai")?.momentum ?? 0);
   const largeMomentum = categoryFlows.find((c) => c.id === "large")?.momentum ?? 0;
 
-  const memeShare = clamp(memeMomentum * 0.35);
-  const altShare = clamp(altMomentum * 0.45);
+  // memeShare and altShare are each independently clamped 0..100, but
+  // nothing previously bounded their SUM before deriving btcShare from the
+  // remainder — when both ran high at once, the three reported shares could
+  // add up to more than 100 (btcShare floors at 0 rather than going
+  // negative), a misleading breakdown on a user-facing widget that's
+  // presented as a 3-way split of the same 100%. Rescaling proportionally
+  // when the pair would overflow keeps all three summing to exactly 100.
+  const rawMemeShare = clamp(memeMomentum * 0.35);
+  const rawAltShare = clamp(altMomentum * 0.45);
+  const combinedShare = rawMemeShare + rawAltShare;
+  const overflowScale = combinedShare > 100 ? 100 / combinedShare : 1;
+  const memeShare = rawMemeShare * overflowScale;
+  const altShare = rawAltShare * overflowScale;
   const btcShare = clamp(100 - memeShare - altShare);
 
   const phase: FlowPhase =

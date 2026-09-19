@@ -133,7 +133,15 @@ export async function computeSuggestedSizing(
 
   if (!stats || stats.sampleSize < MIN_SAMPLES) return { ...insufficientData(stats?.sampleSize ?? 0), personal };
 
-  const hitProbability = mlProb ?? stats.winRate;
+  // predictHitProbability (ml-model.server.ts) is an external model call with
+  // no contract enforcement of its own — a bad regime lookup or a model bug
+  // could hand back a value outside 0..1. Nothing downstream re-clamps this
+  // specific value: it's shown directly to users (the rounded field below)
+  // and feeds the rationale text's "measured hit rate X%" framing, both of
+  // which would otherwise show impossible numbers like a negative or >100%
+  // hit rate. clampedFull (below) only protects the final size percentage,
+  // not this value or the rationale built from it.
+  const hitProbability = Math.max(0, Math.min(1, mlProb ?? stats.winRate));
   const winLossRatio = stats.avgLossPct > 0 ? stats.avgWinPct / stats.avgLossPct : null;
   const b = winLossRatio ?? 1;
   const q = 1 - hitProbability;

@@ -156,13 +156,19 @@ export function runEliteBrainV3(
     cognitionScore,
     signals,
     transition,
+    // Defensive boundary clamp — these are direct passthroughs from other
+    // layers' own scores, and this `vector` is itself a public output
+    // surface. Most of these are already clamped at their own source, but
+    // that's several files away from this one; clamping again here means
+    // this output's 0..100 contract holds regardless of whether every
+    // upstream layer stays disciplined about it.
     vector: {
-      whale: whale.score,
-      sentiment: sentiment.score,
-      narrative: narrative.aggregateStrength,
-      ignition: ignition.ignitionScore,
-      pressure: pressure.score,
-      smartMoney: smart.confidenceScore,
+      whale: clamp(whale.score),
+      sentiment: clamp(sentiment.score),
+      narrative: clamp(narrative.aggregateStrength),
+      ignition: clamp(ignition.ignitionScore),
+      pressure: clamp(pressure.score),
+      smartMoney: clamp(smart.confidenceScore),
     },
   };
 }

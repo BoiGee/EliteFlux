@@ -82,10 +82,19 @@ export function computeSentimentIntel(
   // share proportionally when it isn't (upstream fetch failed).
   const FNG_WEIGHT = 0.2;
   const baseWeight = fearGreed !== null ? 1 - FNG_WEIGHT : 1;
-  const score = Math.round(
-    (priceAcceleration * 0.32 + volumeExpansion * 0.22 + momentumConsistency * 0.28 + volatilitySpike * 0.18) *
-      baseWeight +
-      (fearGreed !== null ? fearGreed * FNG_WEIGHT : 0),
+  // Every component feeding this is already clamped 0..100 except
+  // fearGreed, which is external, upstream-fetched data with no contract
+  // enforcement here — a malformed reading could otherwise push this
+  // composite outside its documented 0..100 range (unlike every other
+  // score in this codebase, which stays clamped).
+  const score = clamp(
+    Math.round(
+      (priceAcceleration * 0.32 + volumeExpansion * 0.22 + momentumConsistency * 0.28 + volatilitySpike * 0.18) *
+        baseWeight +
+        (fearGreed !== null ? fearGreed * FNG_WEIGHT : 0),
+    ),
+    0,
+    100,
   );
 
   const state: SentimentState = score >= 62 ? "Bullish" : score <= 38 ? "Bearish" : "Neutral";
