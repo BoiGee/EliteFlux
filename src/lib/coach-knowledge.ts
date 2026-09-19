@@ -512,7 +512,7 @@ export const PLANS = [
     includes: [
       "Recommendations only — the ranked opportunity list, nothing else on the dashboard",
       "1 Flux the AI Coach message per day",
-      "In-app alerts",
+      "In-app alerts (up to 3)",
     ],
     eli5: "Every new account starts on a 7-day full-Elite trial, not this plan. This is what's left afterward if you don't continue — just the ranked list and one question a day, enough to see there's a real platform here.",
   },
@@ -523,9 +523,9 @@ export const PLANS = [
       "Everything in Free",
       "Per-asset intelligence, exit pressure, momentum and sentiment, plus your own risk read on each coin",
       "Funding/order-book/social microstructure, stablecoin supply, multi-timeframe confluence, volatility regime and cross-exchange divergence",
-      "Disciplined position-size guidance, sub-minute fast-lane alerts",
+      "Disciplined position-size guidance, sub-minute fast-lane alerts (up to 15)",
       "Portfolio connections and the call journal with grading",
-      "Email alerts and a much larger Coach allowance",
+      "Email alerts and 30 Flux the AI Coach messages per day",
     ],
     eli5: "You see each coin's own dials, not just the market's, and get told how much to size it. Narrative detection and the Elite Brain flagship score are Elite-only.",
   },
@@ -538,7 +538,7 @@ export const PLANS = [
       "Whale activity, smart money clustering, real on-chain wallet tracking, options market read, macro correlation and deep cognition",
       "Scenario stress-testing on your own holdings",
       "Autopilot with the full autonomy dial and guardrails",
-      "Telegram and webhook alerts, and the largest Coach allowance",
+      "Telegram and webhook alerts (up to 100), and 45 Flux the AI Coach messages per day",
     ],
     eli5: "The full cockpit, every layer switched on, plus a helper that can act for you within your rules — and what every new account gets to try free for 7 days.",
   },
@@ -593,6 +593,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-09-19",
+    title: "Pricing page now states real numbers, not just \"more\"",
+    detail:
+      "The Operator and Elite plan cards said things like \"a much larger Coach allowance\" and \"the largest Coach allowance\" without ever saying what that actually was. It's now spelled out: Free gets 1 Flux the AI Coach message a day, Operator gets 30, Elite gets 45. Alert caps are stated the same way — Free 3, Operator 15, Elite 100 — instead of being left out entirely on the paid tiers.",
+  },
   {
     date: "2026-09-19",
     title: "The accuracy self-learning loop is grading calls again",
