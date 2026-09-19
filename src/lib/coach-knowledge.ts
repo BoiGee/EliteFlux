@@ -594,6 +594,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 
 export const CHANGELOG: ChangeDoc[] = [
   {
+    date: "2026-09-19",
+    title: "The accuracy self-learning loop is grading calls again",
+    detail:
+      "The part of EliteFlux that matches its own past calls against what actually happened, so it can weight signal families up or down, had a bug: closing out a large batch of matured calls in one go could silently fail, which left the same weeks-old backlog stuck at the front of the queue instead of the loop ever reaching more recent calls. The accuracy scoreboard and confidence scores kept showing numbers throughout, so this wasn't visible from the outside — but the self-learning part of it had effectively stalled. It's fixed now and confirmed working again; weighting will keep adjusting gradually as newly-graded calls accumulate, not instantly.",
+  },
+  {
     date: "2026-09-18",
     title: "More exchanges to connect, a steadier market feed, and guided wallet-app tutorials",
     detail:
