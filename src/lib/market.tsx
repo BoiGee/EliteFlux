@@ -755,10 +755,21 @@ export function LiveMarketProvider({ children }: { children: ReactNode }) {
     }
 
     connect();
+    // Every flush creates a new `tickers` object, which cascades through
+    // `snapshot` (deriveSnapshot always returns a new reference) and from
+    // there through every one of this provider's ~15 useMemo layers
+    // (whale/sentiment/brain/narrative/ignition/smartMoney/brainV3/exit/
+    // recommendations/confidence/...) on every currently-mounted dashboard
+    // component — confirmed by a performance audit as a real, measurable
+    // cost, not a style concern. 3s instead of 1.5s halves that recompute
+    // frequency with no architecture change; a selector-based context split
+    // (so a component only re-renders on ITS OWN slice changing) would cut
+    // it further but is a materially bigger, separate change across the ~21
+    // files that consume this context — intentionally not attempted here.
     const flush = setInterval(() => {
       setTickers({ ...tickersRef.current });
       setLastUpdate(Date.now());
-    }, 1500);
+    }, 3000);
 
     return () => {
       closedByUs = true;

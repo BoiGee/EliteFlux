@@ -12,6 +12,43 @@ import {
   Zap,
 } from "lucide-react";
 import { useEliteIntel } from "@/lib/market";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getServerSnapshotStatus } from "@/lib/market-status.functions";
+
+function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins === 1) return "1m ago";
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins / 60)}h ago`;
+}
+
+/**
+ * This dashboard's score above is recomputed live, client-side, on every
+ * feed tick — deliberately not the same computation as the server's
+ * periodic one (every 5 minutes) that alerts and Autopilot actually act on.
+ * That's an intentional live-responsiveness tradeoff, but it means the two
+ * numbers can genuinely differ at any moment. Surfacing what the server
+ * last confirmed, right next to the live number, means a user seeing an
+ * alert fire at a different score than what's on screen right now has an
+ * immediate answer for why, instead of it looking like a bug.
+ */
+function ServerConfirmedCaption() {
+  const fetchStatus = useServerFn(getServerSnapshotStatus);
+  const q = useQuery({
+    queryKey: ["server-snapshot-status"],
+    queryFn: () => fetchStatus(),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  if (!q.data) return null;
+  return (
+    <div className="mt-1 text-[10px] text-muted-foreground/70">
+      Server-confirmed (drives alerts &amp; Autopilot): {q.data.fluxScore} · {timeAgo(q.data.capturedAt)}
+    </div>
+  );
+}
 
 function colorFor(score: number) {
   if (score >= 81) return "bull";
@@ -208,6 +245,7 @@ export function EliteBrainSystem() {
               <span className="block mt-0.5 opacity-80">{confidence.reasons[0]}</span>
             )}
           </div>
+          <ServerConfirmedCaption />
         </div>
 
         <div className="flex flex-col justify-center gap-4">
