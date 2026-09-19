@@ -1327,6 +1327,7 @@ export type Database = {
         | "expired"
         | "blocked"
         | "unknown"
+        | "executing"
       alert_channel: "in_app" | "email" | "telegram" | "webhook"
       alert_trigger:
         | "flux_score"
@@ -1497,6 +1498,7 @@ export const Constants = {
         "expired",
         "blocked",
         "unknown",
+        "executing",
       ],
       alert_channel: ["in_app", "email", "telegram", "webhook"],
       alert_trigger: [

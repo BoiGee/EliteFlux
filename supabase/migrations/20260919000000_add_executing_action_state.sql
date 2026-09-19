@@ -1,0 +1,21 @@
+-- Critical latent bug, found by code audit and confirmed against the live
+-- schema: src/lib/autopilot.server.ts's executeAction has claimed an action
+-- by setting state='executing' since commit 72a0113 (well before this
+-- migration), for BOTH paper and live trades — it's the very first write in
+-- the function, before the paper_mode branch. But 'executing' was never
+-- actually added to the action_state enum in any prior migration. Every
+-- real execution attempt would fail this UPDATE with a Postgres
+-- "invalid input value for enum action_state" error, and executeAction's
+-- own error handling (`if (!claim.data?.length) return { ok: false, error:
+-- "This action is already being processed." }`) would misreport that
+-- failure as a duplicate-processing message rather than the real cause.
+--
+-- Zero real-world impact so far (autopilot_actions is currently empty —
+-- no user has armed Autopilot enough to generate a proposal yet), but this
+-- would have silently broken the first real execution attempt, paper or
+-- live, with a misleading error message.
+--
+-- Standalone ADD VALUE statement only, no DML referencing it in this file —
+-- Postgres forbids using a newly-added enum value in the same transaction
+-- it was added in.
+ALTER TYPE public.action_state ADD VALUE IF NOT EXISTS 'executing';
