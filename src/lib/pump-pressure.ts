@@ -41,7 +41,14 @@ export function computePumpPressure(
     sentiment.score +
       (sentiment.trend === "Rising" ? 10 : sentiment.trend === "Falling" ? -10 : 0),
   );
-  const volumeExpansion = sentiment.components.volumeExpansion;
+  // Unlike every sibling contributor above, this and momentumIgnition below
+  // were passed through with no clamp() of their own — sentiment.components.
+  // volumeExpansion IS clamped at its source today, so this can't currently
+  // leak out of range in production, but nothing here enforces that
+  // boundary independently. Same "clamped inputs, unclamped output field"
+  // pattern already fixed in sentiment-intel.ts and elite-brain.ts,
+  // confirmed here by a test-coverage audit with an adversarial-input test.
+  const volumeExpansion = clamp(sentiment.components.volumeExpansion);
   const narrativeStrength = clamp(
     narrative.aggregateStrength + (narrative.topEmerging.length > 0 ? 8 : 0),
   );
@@ -52,7 +59,7 @@ export function computePumpPressure(
         ? 50 - whale.score * 0.4
         : 50,
   );
-  const momentumIgnition = ignition.ignitionScore;
+  const momentumIgnition = clamp(ignition.ignitionScore);
 
   const score = Math.round(
     clamp(
