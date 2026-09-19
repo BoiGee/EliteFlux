@@ -68,13 +68,25 @@ export async function resolveSignalOutcomes(
   let resolved = 0;
   let closed = 0;
 
-  const { data } = await admin
+  const { data, error: selErr } = await admin
     .from("signal_events")
     .select("id,signal_type,symbol,score,regime,reference_price,fired_at")
     .is("resolved_at", null)
     .lte("fired_at", new Date(now - SIGNAL_HORIZONS[0]! * 3600_000).toISOString())
     .order("fired_at", { ascending: true })
     .limit(1000);
+  // Previously unchecked — a failed SELECT here (any reason) silently
+  // returned {resolved:0, closed:0} indistinguishable from "nothing to do",
+  // exactly the "unchecked write/read error" pattern already found and
+  // fixed elsewhere this session (system-runs.server.ts's finishRun).
+  // Confirmed live: a real, multi-week backlog of unresolved signal_events
+  // has stopped advancing despite the underlying query/update both working
+  // correctly when run directly — this makes the real cause, whatever it
+  // is, visible instead of indistinguishable from "no work available".
+  if (selErr) {
+    console.error("resolveSignalOutcomes: select failed", selErr);
+    return { resolved, closed };
+  }
 
   const events = (data ?? []) as OpenEvent[];
   if (!events.length) return { resolved, closed };
@@ -121,10 +133,35 @@ export async function resolveSignalOutcomes(
       .from("signal_outcomes")
       .upsert(rows, { onConflict: "event_id,horizon_hours", ignoreDuplicates: true });
     if (!error) resolved = rows.length;
+    else console.error("resolveSignalOutcomes: upsert into signal_outcomes failed", error, { rowCount: rows.length });
   }
   if (closeIds.length) {
-    await admin.from("signal_events").update({ resolved_at: new Date(now).toISOString() }).in("id", closeIds);
-    closed = closeIds.length;
+    // Confirmed live: with the full 1000-row fetch limit above almost
+    // entirely eligible to close in one pass (a real, weeks-old backlog —
+    // every event past MAX_HORIZON_MS+RESOLVE_GRACE_MS qualifies
+    // regardless of pricing), .in("id", closeIds) with ~1000 UUIDs builds a
+    // ~37,000-character query string that PostgREST rejects with a plain
+    // 400 — confirmed by reproducing it directly against the live API.
+    // That failure was previously silent (see the removed unconditional
+    // `closed = closeIds.length` below): every event that should have
+    // closed stayed at the front of "oldest unresolved" forever, so the
+    // same ancient backlog got re-selected every single cycle instead of
+    // the query ever advancing to more recent, more relevant signals —
+    // effectively halting new pattern-learning while looking healthy in
+    // every log that only checked "did this throw". Chunking keeps each
+    // request's URL well under any such limit.
+    const CHUNK = 200;
+    let closedCount = 0;
+    for (let i = 0; i < closeIds.length; i += CHUNK) {
+      const chunk = closeIds.slice(i, i + CHUNK);
+      const { error } = await admin
+        .from("signal_events")
+        .update({ resolved_at: new Date(now).toISOString() })
+        .in("id", chunk);
+      if (!error) closedCount += chunk.length;
+      else console.error("resolveSignalOutcomes: close update failed for a chunk", error, { chunkSize: chunk.length });
+    }
+    closed = closedCount;
   }
   return { resolved, closed };
 }
