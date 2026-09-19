@@ -72,7 +72,7 @@ export function NotificationBell() {
             </div>
             {recent.length === 0 ? (
               <p className="text-[11px] text-muted-foreground py-4 text-center">
-                Nothing fired yet. Alerts are evaluated every 15 minutes.
+                Nothing fired yet. Alerts are evaluated every 5 minutes.
               </p>
             ) : (
               <ul className="space-y-1.5 max-h-80 overflow-y-auto">

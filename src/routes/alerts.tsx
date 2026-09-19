@@ -340,7 +340,7 @@ function AlertsPage() {
             </div>
             {history.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Nothing fired yet. Alerts are evaluated automatically every 15 minutes.
+                Nothing fired yet. Alerts are evaluated automatically every 5 minutes.
               </p>
             )}
             <ul className="space-y-2 max-h-[32rem] overflow-y-auto">

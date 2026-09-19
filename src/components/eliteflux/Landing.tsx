@@ -108,7 +108,7 @@ export function Landing() {
               <BellRing className="w-5 h-5 text-primary shrink-0" />
               <div>
                 <h3 className="text-sm font-bold">Alerts that reach you</h3>
-                <p className="text-xs text-muted-foreground mt-1">In-app, email, Telegram and signed webhooks — evaluated every 15 minutes.</p>
+                <p className="text-xs text-muted-foreground mt-1">In-app, email, Telegram and signed webhooks — evaluated every 5 minutes.</p>
               </div>
             </div>
             <div className="flex gap-3">

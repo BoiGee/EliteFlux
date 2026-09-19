@@ -43,7 +43,6 @@ import { Route as ApiBrainV3RouteImport } from './routes/api/brain/v3'
 import { Route as ApiBrainSentimentRouteImport } from './routes/api/brain/sentiment'
 import { Route as ApiBrainOnchainRouteImport } from './routes/api/brain/onchain'
 import { Route as ApiBrainEliteFluxRouteImport } from './routes/api/brain/elite-flux'
-import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
 const WhyElitefluxRoute = WhyElitefluxRouteImport.update({
   id: '/why-eliteflux',
@@ -218,11 +217,6 @@ const ApiBrainEliteFluxRoute = ApiBrainEliteFluxRouteImport.update({
   path: '/api/brain/elite-flux',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
-  id: '/.lovable/oauth/consent',
-  path: '/.lovable/oauth/consent',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -248,7 +242,6 @@ export interface FileRoutesByFullPath {
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach/': typeof CoachIndexRoute
-  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -285,7 +278,6 @@ export interface FileRoutesByTo {
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach': typeof CoachIndexRoute
-  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -323,7 +315,6 @@ export interface FileRoutesById {
   '/auth/telegram': typeof AuthTelegramRoute
   '/coach/$threadId': typeof CoachThreadIdRoute
   '/coach/': typeof CoachIndexRoute
-  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/brain/elite-flux': typeof ApiBrainEliteFluxRoute
   '/api/brain/onchain': typeof ApiBrainOnchainRoute
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
@@ -362,7 +353,6 @@ export interface FileRouteTypes {
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach/'
-    | '/.lovable/oauth/consent'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -399,7 +389,6 @@ export interface FileRouteTypes {
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach'
-    | '/.lovable/oauth/consent'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -436,7 +425,6 @@ export interface FileRouteTypes {
     | '/auth/telegram'
     | '/coach/$threadId'
     | '/coach/'
-    | '/.lovable/oauth/consent'
     | '/api/brain/elite-flux'
     | '/api/brain/onchain'
     | '/api/brain/sentiment'
@@ -474,7 +462,6 @@ export interface RootRouteChildren {
   AuthTelegramRoute: typeof AuthTelegramRoute
   CoachThreadIdRoute: typeof CoachThreadIdRoute
   CoachIndexRoute: typeof CoachIndexRoute
-  DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiBrainEliteFluxRoute: typeof ApiBrainEliteFluxRoute
   ApiBrainOnchainRoute: typeof ApiBrainOnchainRoute
   ApiBrainSentimentRoute: typeof ApiBrainSentimentRoute
@@ -728,13 +715,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBrainEliteFluxRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.lovable/oauth/consent': {
-      id: '/.lovable/oauth/consent'
-      path: '/.lovable/oauth/consent'
-      fullPath: '/.lovable/oauth/consent'
-      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -763,7 +743,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthTelegramRoute: AuthTelegramRoute,
   CoachThreadIdRoute: CoachThreadIdRoute,
   CoachIndexRoute: CoachIndexRoute,
-  DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiBrainEliteFluxRoute: ApiBrainEliteFluxRoute,
   ApiBrainOnchainRoute: ApiBrainOnchainRoute,
   ApiBrainSentimentRoute: ApiBrainSentimentRoute,
