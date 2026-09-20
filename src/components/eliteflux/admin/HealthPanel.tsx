@@ -13,6 +13,7 @@ import { Section, SectionState } from "./Section";
 
 const JOBS = [
   { id: "evaluate-alerts", label: "Check alerts now" },
+  { id: "evaluate-alerts-fast", label: "Check fast-lane alerts now" },
   { id: "settle-payments", label: "Re-check pending payments" },
   { id: "expire-subs", label: "Expire lapsed plans" },
   { id: "retention-cleanup", label: "Run retention cleanup" },

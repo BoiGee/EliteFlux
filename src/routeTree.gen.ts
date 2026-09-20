@@ -37,6 +37,7 @@ import { Route as ApiPublicRetentionCleanupRouteImport } from './routes/api/publ
 import { Route as ApiPublicPaystackWebhookRouteImport } from './routes/api/public/paystack-webhook'
 import { Route as ApiPublicMarketFeedRouteImport } from './routes/api/public/market-feed'
 import { Route as ApiPublicExpireSubsRouteImport } from './routes/api/public/expire-subs'
+import { Route as ApiPublicEvaluateAlertsFastRouteImport } from './routes/api/public/evaluate-alerts-fast'
 import { Route as ApiPublicEvaluateAlertsRouteImport } from './routes/api/public/evaluate-alerts'
 import { Route as ApiBrainWhaleRouteImport } from './routes/api/brain/whale'
 import { Route as ApiBrainV3RouteImport } from './routes/api/brain/v3'
@@ -187,6 +188,12 @@ const ApiPublicExpireSubsRoute = ApiPublicExpireSubsRouteImport.update({
   path: '/api/public/expire-subs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicEvaluateAlertsFastRoute =
+  ApiPublicEvaluateAlertsFastRouteImport.update({
+    id: '/api/public/evaluate-alerts-fast',
+    path: '/api/public/evaluate-alerts-fast',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicEvaluateAlertsRoute = ApiPublicEvaluateAlertsRouteImport.update({
   id: '/api/public/evaluate-alerts',
   path: '/api/public/evaluate-alerts',
@@ -248,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
+  '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
   '/api/public/market-feed': typeof ApiPublicMarketFeedRoute
   '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
@@ -284,6 +292,7 @@ export interface FileRoutesByTo {
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
+  '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
   '/api/public/market-feed': typeof ApiPublicMarketFeedRoute
   '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
@@ -321,6 +330,7 @@ export interface FileRoutesById {
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
+  '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
   '/api/public/market-feed': typeof ApiPublicMarketFeedRoute
   '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
@@ -359,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/brain/v3'
     | '/api/brain/whale'
     | '/api/public/evaluate-alerts'
+    | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
     | '/api/public/market-feed'
     | '/api/public/paystack-webhook'
@@ -395,6 +406,7 @@ export interface FileRouteTypes {
     | '/api/brain/v3'
     | '/api/brain/whale'
     | '/api/public/evaluate-alerts'
+    | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
     | '/api/public/market-feed'
     | '/api/public/paystack-webhook'
@@ -431,6 +443,7 @@ export interface FileRouteTypes {
     | '/api/brain/v3'
     | '/api/brain/whale'
     | '/api/public/evaluate-alerts'
+    | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
     | '/api/public/market-feed'
     | '/api/public/paystack-webhook'
@@ -468,6 +481,7 @@ export interface RootRouteChildren {
   ApiBrainV3Route: typeof ApiBrainV3Route
   ApiBrainWhaleRoute: typeof ApiBrainWhaleRoute
   ApiPublicEvaluateAlertsRoute: typeof ApiPublicEvaluateAlertsRoute
+  ApiPublicEvaluateAlertsFastRoute: typeof ApiPublicEvaluateAlertsFastRoute
   ApiPublicExpireSubsRoute: typeof ApiPublicExpireSubsRoute
   ApiPublicMarketFeedRoute: typeof ApiPublicMarketFeedRoute
   ApiPublicPaystackWebhookRoute: typeof ApiPublicPaystackWebhookRoute
@@ -673,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicExpireSubsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/evaluate-alerts-fast': {
+      id: '/api/public/evaluate-alerts-fast'
+      path: '/api/public/evaluate-alerts-fast'
+      fullPath: '/api/public/evaluate-alerts-fast'
+      preLoaderRoute: typeof ApiPublicEvaluateAlertsFastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/evaluate-alerts': {
       id: '/api/public/evaluate-alerts'
       path: '/api/public/evaluate-alerts'
@@ -749,6 +770,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBrainV3Route: ApiBrainV3Route,
   ApiBrainWhaleRoute: ApiBrainWhaleRoute,
   ApiPublicEvaluateAlertsRoute: ApiPublicEvaluateAlertsRoute,
+  ApiPublicEvaluateAlertsFastRoute: ApiPublicEvaluateAlertsFastRoute,
   ApiPublicExpireSubsRoute: ApiPublicExpireSubsRoute,
   ApiPublicMarketFeedRoute: ApiPublicMarketFeedRoute,
   ApiPublicPaystackWebhookRoute: ApiPublicPaystackWebhookRoute,

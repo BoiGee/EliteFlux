@@ -48,6 +48,25 @@ export const verifyOwner = createServerFn({ method: "POST" })
     return { owner: data === true };
   });
 
+// Must match wrangler.jsonc's triggers.crons / scheduler.server.ts's
+// CRON_JOBS exactly (evaluate-alerts-fast: * * * * *, evaluate-alerts:
+// */5 * * * *, settle-payments: 0 * * * *, expire-subs: 0 */12 * * *,
+// retention-cleanup: 0 3 * * *) — confirmed live via audit that these had
+// drifted badly out of sync with the real schedule (evaluate-alerts was set
+// to 20min instead of 5, evaluate-alerts-fast to 5min instead of 1), which
+// meant getSystemHealth's "stale: ageMin > intervalMin * 2" only fired
+// after 4x longer than it should have — exactly the kind of
+// silent-until-checked gap the health panel exists to catch. Exported (not
+// a local const inside the handler) so admin.functions.test.ts can guard
+// against this drifting again.
+export const EXPECTED_INTERVAL_MIN: Record<string, number> = {
+  "evaluate-alerts-fast": 1,
+  "evaluate-alerts": 5,
+  "settle-payments": 60,
+  "expire-subs": 720,
+  "retention-cleanup": 1440,
+};
+
 /** Operational health: last background run, delivery failures, data freshness. */
 export const getSystemHealth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -93,13 +112,6 @@ export const getSystemHealth = createServerFn({ method: "POST" })
     // A job that stopped running entirely must not look identical to a healthy
     // one, so each known job reports its own freshness.
     const runs = (runsRes.data ?? []) as Array<{ job: string; started_at: string; status: string }>;
-    const EXPECTED_INTERVAL_MIN: Record<string, number> = {
-      "evaluate-alerts": 20,
-      "evaluate-alerts-fast": 5,
-      "expire-subs": 1500,
-      "settle-payments": 120,
-      "retention-cleanup": 1500,
-    };
     // Consecutive failures matter more than staleness here: a job that runs on
     // schedule but fails every time never looks "stale", it just does nothing.
     const { data: recentRuns } = await supabaseAdmin
@@ -611,7 +623,11 @@ export const listAdminAudit = createServerFn({ method: "POST" })
 export const runBackgroundJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ job: z.enum(["evaluate-alerts", "expire-subs", "settle-payments", "retention-cleanup"]) }).parse(input),
+    z
+      .object({
+        job: z.enum(["evaluate-alerts", "evaluate-alerts-fast", "expire-subs", "settle-payments", "retention-cleanup"]),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context as never);
