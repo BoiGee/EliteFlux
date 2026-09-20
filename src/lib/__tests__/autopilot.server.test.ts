@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { executeAction } from "../autopilot.server";
-import { DEFAULT_SETTINGS } from "../autonomy";
+import { executeAction, recordCandidate } from "../autopilot.server";
+import { DEFAULT_SETTINGS, type AutopilotSettings } from "../autonomy";
+import type { Candidate, PortfolioView } from "../autopilot-engine";
 import { FakeDb } from "./helpers/fake-db";
 
 const USER_ID = "user-1";
@@ -35,6 +36,83 @@ function seedHappyPath(): FakeDb {
 // property has never been tested despite being the specific safety
 // mechanism a critical bug this session (action_state missing 'executing'
 // from its enum entirely) was found inside of.
+const settings: AutopilotSettings = {
+  ...DEFAULT_SETTINGS,
+  user_id: USER_ID,
+  disclosure_accepted_at: null,
+  armed_at: null,
+  disarmed_reason: null,
+  peak_portfolio_usd: null,
+};
+
+const tinyPortfolio: PortfolioView = { totalUsd: 10.03, stableUsd: 10.03, positions: [] };
+
+const avaxBuy: Candidate = {
+  kind: "buy",
+  symbol: "AVAX",
+  conviction: 94,
+  notionalUsd: 2.5,
+  sizePct: 25,
+  referencePrice: 30,
+  rationale: "test",
+};
+
+// Reproduces the real production incident directly: a too-small account
+// (~$10 stable) whose sized-down buy always lands under min_order_size,
+// blocked every single guardrail-check cycle. Before this fix, a blocked
+// row never counted as "already pending," so proposeActions + recordCandidate
+// re-created an identical blocked row every cron cycle indefinitely.
+describe("recordCandidate dedup", () => {
+  it("does not re-propose a symbol with an unexpired blocked action already on file", async () => {
+    const db = new FakeDb();
+    db.seed("autopilot_actions", [
+      {
+        id: "existing-blocked",
+        user_id: USER_ID,
+        kind: "buy",
+        symbol: "AVAX",
+        state: "blocked",
+        blocked_reason: "min_order_size: 2.51 USD after caps",
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      },
+    ]);
+
+    const result = await recordCandidate(db as never, USER_ID, avaxBuy, settings, tinyPortfolio);
+
+    expect(result.id).toBe("existing-blocked");
+    expect(result.state).toBe("blocked");
+    expect(db.rows("autopilot_actions")).toHaveLength(1);
+  });
+
+  it("does propose again once the previous blocked action has expired", async () => {
+    const db = new FakeDb();
+    db.seed("autopilot_actions", [
+      {
+        id: "stale-blocked",
+        user_id: USER_ID,
+        kind: "buy",
+        symbol: "AVAX",
+        state: "blocked",
+        blocked_reason: "min_order_size: 2.51 USD after caps",
+        expires_at: new Date(Date.now() - 1000).toISOString(),
+      },
+    ]);
+
+    const result = await recordCandidate(db as never, USER_ID, avaxBuy, settings, tinyPortfolio);
+
+    expect(result.id).not.toBe("stale-blocked");
+    expect(db.rows("autopilot_actions")).toHaveLength(2);
+  });
+
+  it("still blocks a genuinely too-small buy with the same reason as production", async () => {
+    const db = new FakeDb();
+    const result = await recordCandidate(db as never, USER_ID, avaxBuy, settings, tinyPortfolio);
+
+    expect(result.state).toBe("blocked");
+    expect(result.blockedReason).toContain("min_order_size");
+  });
+});
+
 describe("executeAction claim race", () => {
   it("lets exactly one of two concurrent calls on the same action proceed", async () => {
     const db = seedHappyPath();

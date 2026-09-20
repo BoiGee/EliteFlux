@@ -386,12 +386,17 @@ function AutopilotPage() {
             <div className="pt-2 space-y-1.5">
               <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Recent</p>
               {recent.map((a) => (
-                <div key={a.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground/80 uppercase">{a.kind}</span>
-                  <span className="font-semibold text-foreground/80">{a.symbol}</span>
-                  <span>{a.state}</span>
-                  {a.paper && <span className="text-[10px] px-1.5 rounded bg-surface-2">paper</span>}
-                  <span className="ml-auto">{new Date(a.created_at).toLocaleString()}</span>
+                <div key={a.id} className="space-y-0.5">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground/80 uppercase">{a.kind}</span>
+                    <span className="font-semibold text-foreground/80">{a.symbol}</span>
+                    <span>{a.state}</span>
+                    {a.paper && <span className="text-[10px] px-1.5 rounded bg-surface-2">paper</span>}
+                    <span className="ml-auto">{new Date(a.created_at).toLocaleString()}</span>
+                  </div>
+                  {a.state === "blocked" && a.blocked_reason && (
+                    <p className="text-[11px] text-warn/90 pl-0.5">Blocked: {a.blocked_reason}</p>
+                  )}
                 </div>
               ))}
             </div>

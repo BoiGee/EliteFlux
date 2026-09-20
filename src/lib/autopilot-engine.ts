@@ -102,8 +102,17 @@ export function proposeActions(
       continue;
     }
 
+    // `exiting` above only gates a *held* position (the pos && guard) — a
+    // not-yet-held coin fell straight through to this check with no
+    // instability gate of its own, so the exact same "High Risk / Unstable
+    // Phase" stance that forces a full exit on a held position could still
+    // green-light a brand-new starter buy into that same coin. Confirmed
+    // live: a real blocked-action rationale read "scores 61 in high risk /
+    // unstable phase ... Adding a 25% starter position" — proposing to buy
+    // into the very condition that would trigger selling out of it.
     const accumulating =
-      o.band === "High Conviction" || (o.band === "Strong Early" && o.stance !== "Distribution Phase");
+      !exiting &&
+      (o.band === "High Conviction" || (o.band === "Strong Early" && o.stance !== "Distribution Phase"));
     if (accumulating) {
       const targetPct = Math.min(g.max_trade_pct, 100);
       const currentWeight = pos?.weight ?? 0;

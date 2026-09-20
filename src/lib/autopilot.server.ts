@@ -138,18 +138,26 @@ export async function recordCandidate(
   // gets re-proposed every cycle, piling up redundant pending actions for
   // the same symbol. hoursSinceLastTrade/todayUsage only look at *executed*
   // trades, so they don't catch this — check pending state directly instead.
+  //
+  // "blocked" is included too, not just proposed/approved — confirmed live
+  // as a real bug: a candidate that fails a guardrail (e.g. min_order_size
+  // on a too-small account) got re-proposed and re-blocked every single
+  // cron cycle forever, since a blocked row never counted as "pending" here.
+  // Reusing the same 6h expires_at as everything else means it still
+  // retries periodically (in case the underlying condition changes, e.g.
+  // the user deposits more funds) rather than being silenced permanently.
   const { data: pending } = await db
     .from("autopilot_actions")
-    .select("id")
+    .select("id,state")
     .eq("user_id", userId)
     .eq("symbol", c.symbol)
-    .in("state", ["proposed", "approved"])
+    .in("state", ["proposed", "approved", "blocked"])
     .gt("expires_at", new Date().toISOString())
     .limit(1)
     .maybeSingle();
   if (pending) {
-    const id = (pending as { id: string }).id;
-    return { id, state: "proposed" };
+    const row = pending as { id: string; state: "proposed" | "approved" | "blocked" };
+    return { id: row.id, state: row.state };
   }
 
   const usage = await todayUsage(db, userId);

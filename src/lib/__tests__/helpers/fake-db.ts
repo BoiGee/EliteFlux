@@ -41,6 +41,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
     this.filters.push((r) => vals.includes(r[col]));
     return this;
   }
+  gt(col: string, val: string | number) {
+    this.filters.push((r) => (r[col] as string | number) > val);
+    return this;
+  }
   gte(col: string, val: string | number) {
     this.filters.push((r) => (r[col] as string | number) >= val);
     return this;

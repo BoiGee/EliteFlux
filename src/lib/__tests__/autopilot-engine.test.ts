@@ -73,6 +73,29 @@ describe("proposeActions", () => {
     expect(out[0]?.sizePct).toBe(guardrails.max_trade_pct);
   });
 
+  it("never proposes a starter buy for a not-yet-held coin in High Risk / Unstable Phase, even at High Conviction band", () => {
+    // Reproduces a real production case: a live blocked-action rationale
+    // read "scores 61 in high risk / unstable phase ... Adding a 25% starter
+    // position" — the same stance that forces a full exit on an already-held
+    // position was, until this fix, still allowed to green-light buying in.
+    const out = proposeActions(
+      [opp({ symbol: "AVAX", band: "High Conviction", stance: "High Risk / Unstable Phase" as EliteOpportunity["stance"] })],
+      portfolio,
+      guardrails,
+    );
+    expect(out).toHaveLength(0);
+  });
+
+  it("still proposes a buy at High Conviction band for an unheld coin once the isHighRisk/unstable trigger is gone", () => {
+    const out = proposeActions(
+      [opp({ symbol: "AVAX", band: "High Conviction", stance: "Accumulation Phase" as EliteOpportunity["stance"] })],
+      portfolio,
+      guardrails,
+    );
+    expect(out[0]?.kind).toBe("buy");
+    expect(out[0]?.symbol).toBe("AVAX");
+  });
+
   it("skips buys for positions already sized in", () => {
     const heavy: PortfolioView = {
       ...portfolio,
