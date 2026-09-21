@@ -595,6 +595,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 export const CHANGELOG: ChangeDoc[] = [
   {
     date: "2026-09-21",
+    title: "An unvalidated Autopilot signal can no longer out-size a validated one",
+    detail:
+      "When the platform hasn't measured enough real outcomes yet to confirm whether a signal genuinely pays off, that's not the same as the data saying it's bad — Autopilot still traded it, but at your full guardrail size (up to 40%), same as a proven signal. Meanwhile a signal the platform HAD measured and confirmed as genuinely good was capped at just 10%, EliteFlux's own conservative ceiling. That meant an unproven signal could size larger than a proven one — backwards. An unmeasured signal is now capped at that same 10% ceiling until it actually builds a track record. A measured, genuinely bad signal (negative edge) still isn't traded at all — that part hasn't changed.",
+  },
+  {
+    date: "2026-09-21",
     title: "Small accounts can now actually clear Autopilot's minimum order size",
     detail:
       "Kelly sizing (the part of Autopilot that scales a position to the platform's own measured track record) caps itself at 10% of your portfolio no matter how strong the edge is. For any account under roughly $60, 10% lands below the exchange minimum on its own — meaning a genuinely good, measured signal could never actually place a trade, no matter what. Autopilot now rounds a positive-edge proposal up to the minimum order size instead of leaving it stuck below it, capped at whatever your own max-size-per-trade guardrail already allows — it will never bet more than you've told it it's allowed to. This doesn't help every case: if even your own guardrail ceiling can't reach the minimum order size, or the signal's measured edge isn't positive, the trade still correctly won't go through.",

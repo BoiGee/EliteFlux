@@ -176,6 +176,38 @@ describe("applyKellySizing rounds up to the minimum order size", () => {
   });
 });
 
+// A signal the platform hasn't measured enough outcomes for yet (edge:
+// "unclear") previously fell through untouched, at the full flat guardrail
+// size — meaning a completely unvalidated signal could size up to a user's
+// full 40% ceiling, larger than a signal the platform HAD confirmed was
+// genuinely good (capped at 10%). Backwards from what disciplined,
+// measured sizing should mean.
+describe("applyKellySizing caps an unvalidated (unclear-edge) signal", () => {
+  it("caps an insufficient-data signal at the same ceiling positive-edge sizing itself never exceeds", async () => {
+    const db = new FakeDb(); // no signal_outcomes seeded at all -> insufficient data -> edge "unclear"
+    const portfolio: PortfolioView = { totalUsd: 50, stableUsd: 50, positions: [] };
+
+    const [out] = await applyKellySizing(db as never, USER_ID, portfolio, null, [btcBuyCandidate]);
+
+    expect(out).toBeDefined();
+    expect(out!.sizePct).toBe(10);
+    expect(out!.notionalUsd).toBe(5);
+    expect(out!.rationale).toContain("Not enough measured outcomes");
+  });
+
+  it("leaves a candidate whose guardrail sizePct is already at or below the cap untouched", async () => {
+    const db = new FakeDb();
+    const portfolio: PortfolioView = { totalUsd: 50, stableUsd: 50, positions: [] };
+    const conservative: Candidate = { ...btcBuyCandidate, sizePct: 5, notionalUsd: 2.5 };
+
+    const [out] = await applyKellySizing(db as never, USER_ID, portfolio, null, [conservative]);
+
+    expect(out).toBeDefined();
+    expect(out!.sizePct).toBe(5);
+    expect(out!.rationale).not.toContain("Not enough measured outcomes");
+  });
+});
+
 describe("executeAction claim race", () => {
   it("lets exactly one of two concurrent calls on the same action proceed", async () => {
     const db = seedHappyPath();

@@ -16,7 +16,7 @@ import {
 import { DEFAULT_SETTINGS, type AutopilotSettings, type Guardrails } from "./autonomy";
 import type { EliteOpportunity } from "./recommendation-engine";
 import type { ExitAssetSignal } from "./exit-intel";
-import { computeSuggestedSizing } from "./kelly-sizing.server";
+import { computeSuggestedSizing, MAX_SUGGESTED_SIZE_PCT } from "./kelly-sizing.server";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DB = SupabaseClient<any, any, any>;
@@ -448,17 +448,24 @@ export async function reconcileStuckAutopilotActions(db: DB): Promise<{ reconcil
  * positive edge at this score/regime. Kelly sizing can only tighten toward
  * its measured-edge suggestion, never loosen beyond what proposeActions
  * already proposed (c.sizePct, itself already bounded by the user's own
- * max_trade_pct ceiling): a positive measured edge caps the size to the
- * (smaller, half-Kelly, capped) suggested fraction — or, if that fraction
- * is too small to clear the platform's minimum order size, rounds up just
- * far enough to clear it, still never past c.sizePct; a real measured
- * negative edge drops the candidate entirely; an unclear or
- * insufficient-sample-size read leaves the flat guardrail sizing untouched
- * rather than guessing. Exported for direct testing — going through
- * runAutopilotForUser end-to-end means fighting syncPortfolio's real
- * exchange-fetch behavior (it unconditionally replaces portfolio_holdings
- * based on what it actually finds, which isn't what a sizing-logic test
- * wants to exercise).
+ * max_trade_pct ceiling):
+ *   - a positive measured edge caps the size to the (smaller, half-Kelly,
+ *     capped-at-MAX_SUGGESTED_SIZE_PCT) suggested fraction — or, if that
+ *     fraction is too small to clear the platform's minimum order size,
+ *     rounds up just far enough to clear it, still never past c.sizePct;
+ *   - a real measured negative edge drops the candidate entirely — the
+ *     data says it loses money, so no floor or sizing trick should force it;
+ *   - an unclear or insufficient-sample-size read (not "no signal", just
+ *     "not enough resolved outcomes yet to confirm this specific signal/
+ *     regime combo either way") is capped at the same
+ *     MAX_SUGGESTED_SIZE_PCT ceiling positive-edge sizing itself never
+ *     exceeds, rather than riding the full flat guardrail size untouched —
+ *     an unvalidated signal must never be allowed to size larger than one
+ *     the platform has actually confirmed is good.
+ * Exported for direct testing — going through runAutopilotForUser
+ * end-to-end means fighting syncPortfolio's real exchange-fetch behavior
+ * (it unconditionally replaces portfolio_holdings based on what it
+ * actually finds, which isn't what a sizing-logic test wants to exercise).
  */
 export async function applyKellySizing(
   db: DB,
@@ -515,6 +522,28 @@ export async function applyKellySizing(
         rationale: roundedUp
           ? `${c.rationale} Kelly sizing (measured ${Math.round(sizing.hitProbability * 100)}% hit rate, ${sizing.sampleSize} samples) suggests ${sizing.suggestedSizePct}% of capital, but that's below the minimum order size — rounded up to ${sizePct.toFixed(1)}%.`
           : `${c.rationale} Kelly sizing (measured ${Math.round(sizing.hitProbability * 100)}% hit rate, ${sizing.sampleSize} samples) tightens this to ${sizing.suggestedSizePct}% of capital.`,
+      });
+      continue;
+    }
+    if (sizing.edge === "unclear" && c.sizePct > MAX_SUGGESTED_SIZE_PCT) {
+      // "unclear" isn't "no information" — score/conviction already cleared
+      // min_conviction and proposeActions' own band checks — it means the
+      // platform hasn't measured enough resolved outcomes yet for this
+      // signal/regime combo to confirm the edge either way (or it's
+      // borderline). Before this, that case fell straight through to the
+      // full flat guardrail size untouched, so a completely unvalidated
+      // signal could size up to a user's full 40% ceiling while a signal
+      // the platform HAD thoroughly validated as genuinely good stayed
+      // capped at 10% — backwards from what "measured, disciplined sizing"
+      // should mean. Cap it at the same ceiling positive-edge sizing itself
+      // never exceeds, so confidence never decreases size relative to
+      // having none.
+      const sizePct = MAX_SUGGESTED_SIZE_PCT;
+      out.push({
+        ...c,
+        sizePct,
+        notionalUsd: (portfolio.totalUsd * sizePct) / 100,
+        rationale: `${c.rationale} Not enough measured outcomes yet (${sizing.sampleSize} samples) to confirm an edge here — capped at ${sizePct}% until there's a validated track record.`,
       });
       continue;
     }

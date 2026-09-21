@@ -39,7 +39,11 @@ export interface KellySizing {
 }
 
 const FRACTIONAL_KELLY = 0.5; // half-Kelly: model error means full Kelly overshoots in practice
-const MAX_SUGGESTED_SIZE_PCT = 10; // hard cap regardless of the math
+// Hard cap regardless of the math. Exported: applyKellySizing (autopilot.server.ts)
+// applies this same ceiling to the "unclear" (insufficient-data) edge case
+// too — a signal the platform hasn't validated at all shouldn't be allowed
+// to size larger than one it HAS validated as genuinely good.
+export const MAX_SUGGESTED_SIZE_PCT = 10;
 const MIN_SAMPLES = 30;
 const EDGE_THRESHOLD = 0.03;
 
