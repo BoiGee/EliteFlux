@@ -109,28 +109,40 @@ export const getSystemHealth = createServerFn({ method: "POST" })
 
     const lastSnapshot = (snapRes.data as { captured_at: string } | null)?.captured_at ?? null;
 
-    // A job that stopped running entirely must not look identical to a healthy
-    // one, so each known job reports its own freshness.
-    const runs = (runsRes.data ?? []) as Array<{ job: string; started_at: string; status: string }>;
-    // Consecutive failures matter more than staleness here: a job that runs on
-    // schedule but fails every time never looks "stale", it just does nothing.
-    const { data: recentRuns } = await supabaseAdmin
-      .from("system_runs")
-      .select("job,status,started_at,detail")
-      .order("started_at", { ascending: false })
-      .limit(120);
-    const history = (recentRuns ?? []) as Array<{ job: string; status: string; started_at: string; detail: unknown }>;
-
     const dayAgo = Date.now() - 24 * 3600_000;
     const cleanMsg = (m: unknown) =>
       typeof m === "string"
         ? m.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180)
         : "unknown error";
 
-    const jobs = Object.entries(EXPECTED_INTERVAL_MIN).map(([job, intervalMin]) => {
-      const last = runs.find((r) => r.job === job);
+    // Per-job, not a shared "most recent N rows across every job" query —
+    // confirmed live as a real bug: evaluate-alerts-fast (every 1 min) and
+    // evaluate-alerts (every 5 min) alone fill 10+ rows within any 10-minute
+    // window, so a single top-10-across-all-jobs query was *always* 100%
+    // those two jobs. settle-payments/expire-subs/retention-cleanup never
+    // appeared in it at all, however healthy they actually were — "last"
+    // came back undefined, ageMin came back null, and stale (ageMin===null)
+    // was permanently true for all three, regardless of EXPECTED_INTERVAL_MIN.
+    // A 24h-bounded, job-scoped query is correct at any cadence: the first
+    // row is always that job's true last run, not whichever job happened to
+    // fire most often.
+    const jobNames = Object.keys(EXPECTED_INTERVAL_MIN);
+    const perJobHistory = await Promise.all(
+      jobNames.map((job) =>
+        supabaseAdmin
+          .from("system_runs")
+          .select("status,started_at,detail")
+          .eq("job", job)
+          .gte("started_at", new Date(dayAgo).toISOString())
+          .order("started_at", { ascending: false }),
+      ),
+    );
+
+    const jobs = jobNames.map((job, i) => {
+      const intervalMin = EXPECTED_INTERVAL_MIN[job]!;
+      const mine = (perJobHistory[i]?.data ?? []) as Array<{ status: string; started_at: string; detail: unknown }>;
+      const last = mine[0] ?? null;
       const ageMin = last ? Math.round((Date.now() - new Date(last.started_at).getTime()) / 60000) : null;
-      const mine = history.filter((r) => r.job === job);
       // "skipped" means the cycle found no fresh market data and stood down —
       // a degraded state, not a failure. Only real failures count as red.
       const isFailure = (s: string) => s !== "ok" && s !== "running" && s !== "skipped";
@@ -143,10 +155,8 @@ export const getSystemHealth = createServerFn({ method: "POST" })
       const lastError =
         consecutiveFailures > 0 ? cleanMsg((firstFailure?.detail as { msg?: string } | null)?.msg) : null;
 
-      // 24h rollup so a resolved incident stops dominating the view.
-      const window24h = mine.filter((r) => new Date(r.started_at).getTime() >= dayAgo);
-      const failed24h = window24h.filter((r) => isFailure(r.status)).length;
-      const skipped24h = window24h.filter((r) => r.status === "skipped").length;
+      const failed24h = mine.filter((r) => isFailure(r.status)).length;
+      const skipped24h = mine.filter((r) => r.status === "skipped").length;
 
       // Green now, but red earlier today → show "recovered", not "healthy".
       const recovered = consecutiveFailures === 0 && failed24h > 0;
@@ -156,14 +166,16 @@ export const getSystemHealth = createServerFn({ method: "POST" })
         lastRunAt: last?.started_at ?? null,
         lastStatus: last?.status ?? null,
         ageMinutes: ageMin,
+        // A job that's never run within the last 24h is stale under every
+        // one of these jobs' own expected intervals too, so "not in the 24h
+        // window" and "actually stale" agree here — no separate case needed.
         stale: ageMin === null || ageMin > intervalMin * 2,
         consecutiveFailures,
         lastError,
-        runs24h: window24h.length,
+        runs24h: mine.length,
         failed24h,
         skipped24h,
         recovered,
-
       };
     });
 

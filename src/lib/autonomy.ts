@@ -87,7 +87,7 @@ export const DEFAULT_SETTINGS: Guardrails & {
 };
 
 export const GUARDRAIL_BOUNDS = {
-  max_trade_pct: { min: 0.5, max: 25 },
+  max_trade_pct: { min: 0.5, max: 40 },
   max_trade_usd: { min: 10, max: 25000 },
   max_trades_per_day: { min: 1, max: 20 },
   max_daily_usd: { min: 10, max: 100000 },

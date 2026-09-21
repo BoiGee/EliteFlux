@@ -594,6 +594,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 
 export const CHANGELOG: ChangeDoc[] = [
   {
+    date: "2026-09-21",
+    title: "Autopilot's max trade size can now go up to 40% of your portfolio",
+    detail:
+      "The ceiling on the \"max size per trade\" guardrail was 25% of your portfolio per position. It's now 40%. This only raises what you're allowed to configure — it doesn't change anyone's actual setting, which stays wherever you already had it (5% by default).",
+  },
+  {
     date: "2026-09-19",
     title: "Pricing page now states real numbers, not just \"more\"",
     detail:
