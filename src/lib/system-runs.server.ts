@@ -10,10 +10,26 @@ export interface RunHandle {
   id: string;
 }
 
-/** Claim the lock for `job`. Returns null when another run holds it. */
-export async function beginRun(admin: Admin, job: string): Promise<RunHandle | null> {
+/**
+ * Claim the lock for `job`. Returns null when another run holds it.
+ *
+ * staleMs defaults to 10 minutes, generous enough for the slowest real job
+ * here (evaluate-alerts, whose sequential withTimeout-wrapped stages can
+ * legitimately add up to a few minutes worst-case) without misclassifying
+ * genuine slow progress as a crash. evaluate-alerts-fast overrides this
+ * tighter (see its call site) — it deliberately skips the heavy learning/
+ * coach machinery and has never legitimately taken more than a few seconds,
+ * so a stuck lock there is always a crash, never real work in progress, and
+ * the default 10-minute recovery window means up to 10 missed 1-minute
+ * cycles before it self-heals. Confirmed live: a deploy landing mid-flight
+ * on this exact job left it locked in "running" for the full 10 minutes
+ * (this is a real, recurring pattern — the same thing happened repeatedly
+ * on 2026-09-18 during earlier debugging), which is what first surfaced
+ * this asymmetry.
+ */
+export async function beginRun(admin: Admin, job: string, staleMs = STALE_RUN_MS): Promise<RunHandle | null> {
   // Release a lock left behind by a crashed/timed-out run.
-  const cutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
+  const cutoff = new Date(Date.now() - staleMs).toISOString();
   await admin
     .from("system_runs")
     .update({ status: "stale", finished_at: new Date().toISOString() })

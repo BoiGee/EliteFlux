@@ -622,7 +622,11 @@ export async function runFastAlertsJob(admin: Admin): Promise<FastAlertsResult> 
   const { evaluateAlert, isCoolingDown } = await import("./alerts-engine");
   const { deliverFiredAlerts } = await import("./alert-delivery.server");
 
-  const run = await beginRun(admin, "evaluate-alerts-fast");
+  // Tighter stale-recovery window than beginRun's 10-minute default — see
+  // beginRun's own comment. This job has never legitimately taken more than
+  // a few seconds, so a stuck lock here is always a crash, and the default
+  // window means up to 10 missed 1-minute cycles before self-healing.
+  const run = await beginRun(admin, "evaluate-alerts-fast", 3 * 60 * 1000);
   if (!run) return { ok: true, skipped: "another run is in progress" };
 
   // TEMPORARY diagnostic — same as runEvaluateAlertsJob. Revert once the
