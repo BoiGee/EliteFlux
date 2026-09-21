@@ -595,6 +595,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 export const CHANGELOG: ChangeDoc[] = [
   {
     date: "2026-09-21",
+    title: "Autopilot's minimum order size lowered from $10 to $6",
+    detail:
+      "Every Autopilot buy or sell needs to clear a minimum dollar size before it's placed — otherwise it's rejected before it ever reaches the exchange. That floor was a flat $10 with no real backing; checking the actual exchanges EliteFlux connects to, Bybit's own minimum is $5, so $10 was blocking trades that would have gone through fine. It's now $6, a small buffer above the strictest connected exchange. Note this doesn't help every case — a proposal sized just above the exchange's real minimum (say $5) still won't clear $6, since there's too little room to safely guarantee it won't be rejected at the exchange itself.",
+  },
+  {
+    date: "2026-09-21",
     title: "Autopilot's max trade size can now go up to 40% of your portfolio",
     detail:
       "The ceiling on the \"max size per trade\" guardrail was 25% of your portfolio per position. It's now 40%. This only raises what you're allowed to configure — it doesn't change anyone's actual setting, which stays wherever you already had it (5% by default).",

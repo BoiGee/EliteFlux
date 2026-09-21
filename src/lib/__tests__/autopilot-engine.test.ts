@@ -375,6 +375,29 @@ describe("checkGuardrails", () => {
     expect(v.reason).toContain("min_order_size");
   });
 
+  // MIN_ORDER_USD was a flat $10 with no documented reasoning, nearly 2x
+  // Bybit's real API minimum for spot orders (5 USDT, confirmed via Bybit's
+  // own docs) — confirmed live as the sole blocker on a real, funded ($50+)
+  // account whose Kelly-tightened proposals landed at $1-5. Lowered to $6:
+  // a small buffer over the strictest connectable venue's real minimum.
+  it("no longer blocks an order that clears the real exchange minimum but was previously caught by the old $10 floor", () => {
+    const tiny = { ...guardrails, max_trade_usd: 7 };
+    const v = checkGuardrails(candidate({ notionalUsd: 7 }), tiny, portfolio, zeroUsage, null, null);
+    expect(v.passed).toBe(true);
+  });
+
+  it("still blocks an order too close to the real exchange minimum to safely clear it (the exact case seen live)", () => {
+    // $5.07 is only $0.07 above Bybit's real 5 USDT minimum — accepting it
+    // risks the order being rejected at the exchange itself (a worse
+    // failure mode than a clean pre-flight block), so this isn't the old
+    // bug recurring, it's Kelly sizing genuinely being this conservative on
+    // a still-small account.
+    const tiny = { ...guardrails, max_trade_usd: 5.07 };
+    const v = checkGuardrails(candidate({ notionalUsd: 5.07 }), tiny, portfolio, zeroUsage, null, null);
+    expect(v.passed).toBe(false);
+    expect(v.reason).toContain("min_order_size");
+  });
+
   it("blocks once the daily notional budget is spent", () => {
     const usage = { trades: 0, notionalUsd: guardrails.max_daily_usd };
     const v = checkGuardrails(candidate({}), guardrails, portfolio, usage, null, null);

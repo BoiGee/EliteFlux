@@ -53,6 +53,25 @@ const STABLES = new Set(["USDT", "USDC", "DAI", "FDUSD", "TUSD", "BUSD", "USD"])
 export const isStable = (s: string) => STABLES.has(s.toUpperCase());
 
 /**
+ * Floor below which an order isn't worth placing — was a flat $10 with no
+ * documented reasoning. Confirmed live: a real, funded ($50+) live account
+ * had every buy blocked here, because Kelly sizing was (correctly)
+ * tightening proposals to a measured, conservative fraction of the
+ * portfolio, landing consistently in the $1-$5 range — nowhere near the
+ * arbitrary $10 floor. Checked actual exchange minimums for every venue
+ * this platform can execute on: Bybit's official API minimum for spot
+ * orders is 5 USDT (raised from 1 to 5 in Jan 2025), MEXC's is 1 USDT, and
+ * OKX's is a small per-symbol minSz (typically well under $5 for majors,
+ * not a flat USDT figure). $10 was stricter than any of them for no
+ * documented reason. $6 clears the strictest confirmed venue (Bybit) with
+ * a small buffer, without needlessly blocking a correctly, conservatively
+ * sized position on a genuinely funded account. This is a flat platform-
+ * wide floor, not per-venue/per-symbol — checkGuardrails has no venue
+ * context to be more precise than that.
+ */
+const MIN_ORDER_USD = 6;
+
+/**
  * Build candidate actions from ranked opportunities + the current book.
  * Buys come from high-conviction opportunities not yet held heavily;
  * trims and exits come from distribution/high-risk stances already held, OR
@@ -249,7 +268,7 @@ export function checkGuardrails(
   }
 
   add("daily_notional", dailyRemaining > 0, `${usage.notionalUsd.toFixed(0)}/${g.max_daily_usd} used today`);
-  add("min_order_size", capped >= 10, `${capped.toFixed(2)} USD after caps`);
+  add("min_order_size", capped >= MIN_ORDER_USD, `${capped.toFixed(2)} USD after caps`);
 
   const failed = checks.find((k) => !k.ok);
   return {
