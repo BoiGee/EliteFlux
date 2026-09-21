@@ -341,7 +341,7 @@ export const FEATURES: FeatureDoc[] = [
     key: "autopilot",
     title: "Autopilot & the autonomy dial",
     where: "/autopilot",
-    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. The drawdown guardrail only ever blocks new buys — it never blocks Autopilot's own protective exits or trims, so a bad stretch can't trap you in a losing position. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — rotating the position to your stable symbol — even if nothing else about the position looks wrong yet. The most urgent case (High Exit Pressure) is checked every minute, not just every 5 minutes, so a fast-forming exit signal doesn't sit unacted-on. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
+    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. The drawdown guardrail only ever blocks new buys — it never blocks Autopilot's own protective exits or trims, so a bad stretch can't trap you in a losing position. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — rotating the position to your stable symbol — even if nothing else about the position looks wrong yet. The most urgent case (High Exit Pressure) is checked every minute, not just every 5 minutes, so a fast-forming exit signal doesn't sit unacted-on. Buy sizing also gets measured-edge Kelly sizing, capped at 10% of your portfolio regardless of edge strength — on accounts under roughly $60, that can land below the exchange's minimum order size, so Autopilot rounds a positive-edge trade up to the minimum instead of skipping it, never past your own max-size-per-trade guardrail. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
     eli5: "A dial from 'just tell me' to 'do it for me', with a big red stop button you control.",
     plan: "elite",
     keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve"],
@@ -593,6 +593,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-09-21",
+    title: "Small accounts can now actually clear Autopilot's minimum order size",
+    detail:
+      "Kelly sizing (the part of Autopilot that scales a position to the platform's own measured track record) caps itself at 10% of your portfolio no matter how strong the edge is. For any account under roughly $60, 10% lands below the exchange minimum on its own — meaning a genuinely good, measured signal could never actually place a trade, no matter what. Autopilot now rounds a positive-edge proposal up to the minimum order size instead of leaving it stuck below it, capped at whatever your own max-size-per-trade guardrail already allows — it will never bet more than you've told it it's allowed to. This doesn't help every case: if even your own guardrail ceiling can't reach the minimum order size, or the signal's measured edge isn't positive, the trade still correctly won't go through.",
+  },
   {
     date: "2026-09-21",
     title: "Autopilot's minimum order size lowered from $10 to $6",

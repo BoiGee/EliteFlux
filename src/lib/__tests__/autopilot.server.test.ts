@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executeAction, recordCandidate } from "../autopilot.server";
+import { applyKellySizing, executeAction, recordCandidate } from "../autopilot.server";
 import { DEFAULT_SETTINGS, type AutopilotSettings } from "../autonomy";
 import type { Candidate, PortfolioView } from "../autopilot-engine";
 import { FakeDb } from "./helpers/fake-db";
@@ -110,6 +110,69 @@ describe("recordCandidate dedup", () => {
 
     expect(result.state).toBe("blocked");
     expect(result.blockedReason).toContain("min_order_size");
+  });
+});
+
+function seedStrongEdge(db: FakeDb) {
+  // Mirrors kelly-sizing.server.test.ts's "keeps hitProbability within 0..1
+  // and suggests a positive size for a real, measured edge" seed exactly:
+  // 80% hit rate, wins 10% avg vs losses 4% avg — strong enough to hit
+  // MAX_SUGGESTED_SIZE_PCT's 10% hard cap (see kelly-sizing.server.ts).
+  const now = new Date().toISOString();
+  db.seed("signal_outcomes", [
+    ...Array.from({ length: 40 }, () => ({ hit: true, forward_return_pct: 10, signal_type: "flux_score", horizon_hours: 24, resolved_at: now })),
+    ...Array.from({ length: 10 }, () => ({ hit: false, forward_return_pct: -4, signal_type: "flux_score", horizon_hours: 24, resolved_at: now })),
+  ]);
+}
+
+const btcBuyCandidate: Candidate = {
+  kind: "buy",
+  symbol: "BTC",
+  conviction: 85,
+  notionalUsd: 20, // proposeActions' own flat sizing: 40% guardrail of $50
+  sizePct: 40,
+  referencePrice: 64_000,
+  rationale: "BTC scores 85 in accumulation phase. Adding a 40% starter position.",
+};
+
+// Reproduces the real follow-up to the min_order_size fix: MAX_SUGGESTED_SIZE_PCT
+// hard-caps Kelly's own suggestion at 10% regardless of edge strength, so for
+// any account under roughly $60, 10% of totalUsd lands below MIN_ORDER_USD —
+// meaning a genuinely positive, strongly-measured edge could never clear the
+// exchange-minimum floor no matter what. Confirmed live on a real $50 account.
+describe("applyKellySizing rounds up to the minimum order size", () => {
+  it("rounds a positive-edge proposal up to MIN_ORDER_USD instead of leaving it stuck below it", async () => {
+    const db = new FakeDb();
+    seedStrongEdge(db);
+    const portfolio: PortfolioView = { totalUsd: 50, stableUsd: 50, positions: [] };
+
+    const [out] = await applyKellySizing(db as never, USER_ID, portfolio, null, [btcBuyCandidate]);
+
+    expect(out).toBeDefined();
+    // Kelly's own ideal (10% of $50 = $5) is below MIN_ORDER_USD; confirm
+    // the result is the rounded-up figure, not the raw Kelly suggestion,
+    // and not the original flat 40% guardrail sizing either.
+    expect(out!.notionalUsd).toBeGreaterThanOrEqual(6);
+    expect(out!.sizePct).toBeGreaterThan(10);
+    expect(out!.sizePct).toBeLessThan(40);
+    expect(out!.rationale).toContain("rounded up");
+  });
+
+  it("never rounds up past the original guardrail ceiling, even when that ceiling can't reach the minimum order size", async () => {
+    const db = new FakeDb();
+    seedStrongEdge(db);
+    // 40% of a $10 account is $4 — below MIN_ORDER_USD even at the
+    // candidate's own guardrail-derived sizePct, so rounding up must not
+    // exceed that ceiling (checkGuardrails' min_order_size check still
+    // correctly blocks this downstream, same as before this change).
+    const portfolio: PortfolioView = { totalUsd: 10, stableUsd: 10, positions: [] };
+    const candidate: Candidate = { ...btcBuyCandidate, notionalUsd: 4, sizePct: 40 };
+
+    const [out] = await applyKellySizing(db as never, USER_ID, portfolio, null, [candidate]);
+
+    expect(out).toBeDefined();
+    expect(out!.sizePct).toBeLessThanOrEqual(40);
+    expect(out!.notionalUsd).toBeLessThan(6);
   });
 });
 

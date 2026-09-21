@@ -67,9 +67,11 @@ export const isStable = (s: string) => STABLES.has(s.toUpperCase());
  * a small buffer, without needlessly blocking a correctly, conservatively
  * sized position on a genuinely funded account. This is a flat platform-
  * wide floor, not per-venue/per-symbol — checkGuardrails has no venue
- * context to be more precise than that.
+ * context to be more precise than that. Exported so autopilot.server.ts's
+ * Kelly-sizing step can round a positive-edge proposal up to this floor
+ * instead of leaving it stuck below it — see applyKellySizing's comment.
  */
-const MIN_ORDER_USD = 6;
+export const MIN_ORDER_USD = 6;
 
 /**
  * Build candidate actions from ranked opportunities + the current book.

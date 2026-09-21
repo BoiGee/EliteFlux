@@ -8,6 +8,7 @@ import {
   checkGuardrails,
   proposeActions,
   proposeUrgentExits,
+  MIN_ORDER_USD,
   type Candidate,
   type DayUsage,
   type PortfolioView,
@@ -444,14 +445,22 @@ export async function reconcileStuckAutopilotActions(db: DB): Promise<{ reconcil
  * Buy candidates come out of proposeActions at a flat sizePct (the
  * guardrail's max_trade_pct) — proposeActions is a pure function with no DB
  * access, so it can't know whether the platform has actually measured a
- * positive edge at this score/regime. Kelly sizing can only tighten what
- * proposeActions already proposed, never loosen it: a positive measured
- * edge caps the size to the (smaller, half-Kelly, capped) suggested
- * fraction; a real measured negative edge drops the candidate entirely;
- * an unclear or insufficient-sample-size read leaves the flat guardrail
- * sizing untouched rather than guessing.
+ * positive edge at this score/regime. Kelly sizing can only tighten toward
+ * its measured-edge suggestion, never loosen beyond what proposeActions
+ * already proposed (c.sizePct, itself already bounded by the user's own
+ * max_trade_pct ceiling): a positive measured edge caps the size to the
+ * (smaller, half-Kelly, capped) suggested fraction — or, if that fraction
+ * is too small to clear the platform's minimum order size, rounds up just
+ * far enough to clear it, still never past c.sizePct; a real measured
+ * negative edge drops the candidate entirely; an unclear or
+ * insufficient-sample-size read leaves the flat guardrail sizing untouched
+ * rather than guessing. Exported for direct testing — going through
+ * runAutopilotForUser end-to-end means fighting syncPortfolio's real
+ * exchange-fetch behavior (it unconditionally replaces portfolio_holdings
+ * based on what it actually finds, which isn't what a sizing-logic test
+ * wants to exercise).
  */
-async function applyKellySizing(
+export async function applyKellySizing(
   db: DB,
   userId: string,
   portfolio: PortfolioView,
@@ -482,11 +491,30 @@ async function applyKellySizing(
       continue;
     }
     if (sizing.edge === "positive" && sizing.suggestedSizePct < c.sizePct) {
+      // Kelly's suggested fraction is itself hard-capped at 10% (see
+      // MAX_SUGGESTED_SIZE_PCT in kelly-sizing.server.ts) — for any account
+      // under roughly $60-100, 10% of totalUsd lands below MIN_ORDER_USD,
+      // so a genuinely positive, measured edge could never clear the
+      // exchange-minimum floor no matter how strong it was. Confirmed live:
+      // a real, funded ($50+) account had every proposal blocked this way.
+      // The edge assessment (worth betting at all) is separate from the
+      // ideal-Kelly fraction (how much) — if the edge is positive, round the
+      // size up to whatever actually clears the floor, capped at c.sizePct
+      // so this still never exceeds the user's own guardrail ceiling
+      // (proposeActions already sized c to that). If even c.sizePct can't
+      // reach the floor, this can't help — checkGuardrails' min_order_size
+      // check still correctly blocks it, same as before.
+      const kellyNotional = (portfolio.totalUsd * sizing.suggestedSizePct) / 100;
+      const minViablePct = portfolio.totalUsd > 0 ? (MIN_ORDER_USD / portfolio.totalUsd) * 100 : sizing.suggestedSizePct;
+      const sizePct = kellyNotional < MIN_ORDER_USD ? Math.min(minViablePct, c.sizePct) : sizing.suggestedSizePct;
+      const roundedUp = sizePct > sizing.suggestedSizePct;
       out.push({
         ...c,
-        sizePct: sizing.suggestedSizePct,
-        notionalUsd: (portfolio.totalUsd * sizing.suggestedSizePct) / 100,
-        rationale: `${c.rationale} Kelly sizing (measured ${Math.round(sizing.hitProbability * 100)}% hit rate, ${sizing.sampleSize} samples) tightens this to ${sizing.suggestedSizePct}% of capital.`,
+        sizePct,
+        notionalUsd: (portfolio.totalUsd * sizePct) / 100,
+        rationale: roundedUp
+          ? `${c.rationale} Kelly sizing (measured ${Math.round(sizing.hitProbability * 100)}% hit rate, ${sizing.sampleSize} samples) suggests ${sizing.suggestedSizePct}% of capital, but that's below the minimum order size — rounded up to ${sizePct.toFixed(1)}%.`
+          : `${c.rationale} Kelly sizing (measured ${Math.round(sizing.hitProbability * 100)}% hit rate, ${sizing.sampleSize} samples) tightens this to ${sizing.suggestedSizePct}% of capital.`,
       });
       continue;
     }
