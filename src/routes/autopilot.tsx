@@ -44,8 +44,8 @@ export const Route = createFileRoute("/autopilot")({
 const NUM_FIELDS = [
   { key: "max_trade_pct", label: "Max size per trade", suffix: "% of portfolio" },
   { key: "max_trade_usd", label: "Max size per trade", suffix: "USD" },
-  { key: "max_trades_per_day", label: "Max trades per day", suffix: "trades" },
-  { key: "max_daily_usd", label: "Max traded per day", suffix: "USD" },
+  { key: "max_trades_per_day", label: "Max trades per 24h", suffix: "trades" },
+  { key: "max_daily_usd", label: "Max traded per 24h", suffix: "USD" },
   { key: "min_conviction", label: "Conviction floor", suffix: "score" },
   { key: "cooldown_hours", label: "Cooldown per asset", suffix: "hours" },
   { key: "drawdown_breaker_pct", label: "Auto-disarm drawdown", suffix: "%" },

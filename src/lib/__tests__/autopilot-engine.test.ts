@@ -253,6 +253,22 @@ describe("checkGuardrails", () => {
     expect(v.reason).toContain("daily_trade_count");
   });
 
+  // Confirmed live: usage.trades (todayUsage, autopilot.server.ts) is a
+  // rolling 24h window from each trade's own executed_at, not a midnight
+  // reset — the message must say so, since "today" read as a stuck counter
+  // to a real user checking the next calendar day.
+  it("describes the daily trade count and daily notional limits as a rolling 24h window, not a calendar day", () => {
+    const usage = { trades: guardrails.max_trades_per_day, notionalUsd: 0 };
+    const v = checkGuardrails(candidate({}), guardrails, portfolio, usage, null, null);
+    expect(v.reason).toContain("in the last 24h");
+    expect(v.reason).not.toContain("today");
+
+    const usage2 = { trades: 0, notionalUsd: guardrails.max_daily_usd };
+    const v2 = checkGuardrails(candidate({}), guardrails, portfolio, usage2, null, null);
+    expect(v2.checks.find((c) => c.name === "daily_notional")?.detail).toContain("in the last 24h");
+    expect(v2.checks.find((c) => c.name === "daily_notional")?.detail).not.toContain("today");
+  });
+
   it("enforces the cooldown window", () => {
     const v = checkGuardrails(candidate({}), guardrails, portfolio, zeroUsage, 1, null);
     expect(v.passed).toBe(false);

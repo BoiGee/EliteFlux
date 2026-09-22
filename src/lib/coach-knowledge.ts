@@ -457,7 +457,7 @@ export const HOW_TO: HowToDoc[] = [
     title: "Set how much the Coach may do for you",
     steps: [
       "Open /autopilot and read the disclosure, then choose your level: Observe, Advise, Approve or Autopilot.",
-      "Set your guardrails: maximum size per trade, maximum trades per day, maximum spend per day, minimum conviction and cooldown.",
+      "Set your guardrails: maximum size per trade, maximum trades per 24h, maximum spend per 24h, minimum conviction and cooldown.",
       "Leave Paper mode on to watch it work with no real money until you trust it.",
       "Arm it. Nothing runs until it is armed.",
       "Use the kill switch at any time to stop everything immediately.",
@@ -593,6 +593,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-09-22",
+    title: "\"Max trades per day\" now says what it actually means",
+    detail:
+      "Autopilot's max-trades and max-spend guardrails were labeled \"per day\" and, when blocked, said things like \"2/2 today\" — but the real limit is a rolling 24 hours counted from each trade's own timestamp, not a reset at midnight. A user who traded in the evening would still see it blocked the next afternoon and reasonably read that as a stuck counter. Relabeled to \"per 24h\" everywhere it appears, including the blocked-trade message. The limit itself hasn't changed — a rolling window is harder to game than a midnight reset (it stops someone from trading right before midnight and again right after) — only the wording was wrong.",
+  },
   {
     date: "2026-09-21",
     title: "An unvalidated Autopilot signal can no longer out-size a validated one",

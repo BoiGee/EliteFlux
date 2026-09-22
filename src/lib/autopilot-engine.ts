@@ -216,7 +216,14 @@ export function checkGuardrails(
     !g.blocked_symbols.map((s) => s.toUpperCase()).includes(sym),
     g.blocked_symbols.length ? "never-touch list checked" : "never-touch list empty",
   );
-  add("daily_trade_count", usage.trades < g.max_trades_per_day, `${usage.trades}/${g.max_trades_per_day} today`);
+  // "today" was misleading — todayUsage (autopilot.server.ts) counts a
+  // rolling 24h window from each trade's own timestamp, not since midnight.
+  // Confirmed live: a real user's 2 trades from ~21:16 UTC one day still
+  // correctly blocked new ones past midnight into the next day, but the
+  // message said "2/2 today" right when it was, by their calendar, a new
+  // day — reading as a stuck/broken counter instead of the (safer, harder
+  // to game than a midnight reset) rolling window it actually is.
+  add("daily_trade_count", usage.trades < g.max_trades_per_day, `${usage.trades}/${g.max_trades_per_day} in the last 24h`);
   add(
     "cooldown",
     lastTradeAgoHours === null || lastTradeAgoHours >= g.cooldown_hours,
@@ -269,7 +276,8 @@ export function checkGuardrails(
     }
   }
 
-  add("daily_notional", dailyRemaining > 0, `${usage.notionalUsd.toFixed(0)}/${g.max_daily_usd} used today`);
+  // Same rolling-24h reality as daily_trade_count above, not a midnight reset.
+  add("daily_notional", dailyRemaining > 0, `${usage.notionalUsd.toFixed(0)}/${g.max_daily_usd} used in the last 24h`);
   add("min_order_size", capped >= MIN_ORDER_USD, `${capped.toFixed(2)} USD after caps`);
 
   const failed = checks.find((k) => !k.ok);
