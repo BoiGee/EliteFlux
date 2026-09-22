@@ -103,7 +103,21 @@ export function proposeActions(
     const distributing = o.stance === "Distribution Phase" || (!exiting && exitPressureScore >= 61);
 
     if (pos && (exiting || distributing)) {
-      const fraction = exiting ? 1 : 0.35;
+      // Full exits are deliberately NOT tempered by conviction below — that
+      // trigger (isHighRisk / High Risk-Unstable stance / exitPressure>=81)
+      // is the platform's single most urgent protective signal, and
+      // rationalizing it away because other layers still look good is
+      // exactly the failure mode it exists to prevent. Trims are different:
+      // a coin can score "High Conviction" on its own recommendation read
+      // while exit-intel independently flags rising distribution risk —
+      // two real, simultaneously-true signals the old logic never
+      // reconciled, just acting on whichever fired. A High Conviction read
+      // means the platform still has real confidence in this position, so
+      // a real-but-moderate risk signal gets a lighter, hedging trim
+      // (reduce some exposure) instead of the standard-strength one — never
+      // skipped outright, since the risk signal is real too.
+      const tempered = distributing && !exiting && o.band === "High Conviction";
+      const fraction = exiting ? 1 : tempered ? 0.15 : 0.35;
       const exitPressureNote = exitPressureScore >= 61 ? `, exit pressure ${Math.round(exitPressureScore)}` : "";
       out.push({
         kind: exiting ? "exit" : "trim",
@@ -118,7 +132,9 @@ export function proposeActions(
         referencePrice: o.price,
         rationale: exiting
           ? `${sym} moved into an unstable read (${o.reasonTags.slice(0, 2).join(", ") || "risk elevated"}${exitPressureNote}). Rotating the position to ${g.stable_symbol}.`
-          : `${sym} shows distribution characteristics (${o.reasonTags.slice(0, 2).join(", ") || "supply pressure"}${exitPressureNote}). Trimming ${Math.round(fraction * 100)}% to reduce exposure.`,
+          : tempered
+            ? `${sym} shows distribution characteristics (${o.reasonTags.slice(0, 2).join(", ") || "supply pressure"}${exitPressureNote}), but still scores High Conviction overall. Trimming a lighter ${Math.round(fraction * 100)}% as a hedge rather than the standard cut.`
+            : `${sym} shows distribution characteristics (${o.reasonTags.slice(0, 2).join(", ") || "supply pressure"}${exitPressureNote}). Trimming ${Math.round(fraction * 100)}% to reduce exposure.`,
       });
       continue;
     }

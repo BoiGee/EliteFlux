@@ -111,8 +111,11 @@ describe("proposeActions", () => {
   });
 
   it("proposes a partial trim on distribution", () => {
+    // band explicitly not "High Conviction" (opp()'s default) — this test
+    // is for the plain, non-conflicting trim path; the conflicting-signal
+    // (High Conviction + distribution) case has its own tests below.
     const out = proposeActions(
-      [opp({ symbol: "SOL", stance: "Distribution Phase" as EliteOpportunity["stance"] })],
+      [opp({ symbol: "SOL", band: "Strong Early", stance: "Distribution Phase" as EliteOpportunity["stance"] })],
       portfolio,
       guardrails,
     );
@@ -147,8 +150,14 @@ describe("proposeActions", () => {
     const exitPerAsset: Record<string, ExitAssetSignal | undefined> = {
       SOL: { exitPressureScore: 65 } as ExitAssetSignal,
     };
-    const out = proposeActions([opp({ symbol: "SOL", stance: "Accumulation Phase" })], portfolio, guardrails, exitPerAsset);
+    const out = proposeActions(
+      [opp({ symbol: "SOL", band: "Strong Early", stance: "Accumulation Phase" })],
+      portfolio,
+      guardrails,
+      exitPerAsset,
+    );
     expect(out[0]?.kind).toBe("trim");
+    expect(out[0]?.sizePct).toBe(35);
   });
 
   it("does not trigger below the exit-pressure bands", () => {
@@ -157,6 +166,35 @@ describe("proposeActions", () => {
     };
     const out = proposeActions([opp({ symbol: "ETH", stance: "Accumulation Phase" })], portfolio, guardrails, exitPerAsset);
     expect(out).toHaveLength(0);
+  });
+
+  // A coin can score "High Conviction" on its own recommendation read while
+  // exit-intel independently flags rising distribution risk — two real,
+  // simultaneously-true signals. Previously the trim fired at full (35%)
+  // strength regardless; it should now hedge lighter instead of ignoring
+  // either signal.
+  it("trims a lighter fraction when the coin still scores High Conviction overall (conflicting signals)", () => {
+    // opp()'s default band is "High Conviction" — deliberately not overridden here.
+    const out = proposeActions(
+      [opp({ symbol: "SOL", stance: "Distribution Phase" as EliteOpportunity["stance"] })],
+      portfolio,
+      guardrails,
+    );
+    expect(out[0]?.kind).toBe("trim");
+    expect(out[0]?.sizePct).toBe(15);
+    expect(out[0]?.notionalUsd).toBeCloseTo(1500 * 0.15);
+    expect(out[0]?.rationale).toContain("still scores High Conviction");
+  });
+
+  // The most urgent, most protective trigger must never be softened by a
+  // conflicting bullish read — that's exactly the rationalization this
+  // trigger exists to prevent. Confirms the tempering above is scoped to
+  // trims only, never full exits.
+  it("does NOT temper a full exit even when the coin still scores High Conviction overall", () => {
+    const out = proposeActions([opp({ symbol: "ETH", isHighRisk: true })], portfolio, guardrails);
+    expect(out[0]?.kind).toBe("exit");
+    expect(out[0]?.sizePct).toBe(100);
+    expect(out[0]?.notionalUsd).toBe(3000); // full ETH position, untempered
   });
 });
 
