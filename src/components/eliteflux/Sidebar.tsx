@@ -1,4 +1,4 @@
-import { Activity, Anchor, Brain, Cpu, Flame, Gauge, Layers, Lock, Radar, Radio, ShieldAlert, Sparkles, TrendingDown, Trophy, Users, Wallet, Zap } from "lucide-react";
+import { Activity, Anchor, Brain, Cpu, Flame, Gauge, Layers, Lock, Radar, Radio, ShieldAlert, Sparkles, Telescope, TrendingDown, Trophy, Users, Wallet, Zap } from "lucide-react";
 import { canAccess, useAuth } from "@/lib/auth";
 import { Link } from "@tanstack/react-router";
 import { BrandLockup } from "./BrandLogo";
@@ -103,6 +103,17 @@ export function AppShortcutLinks({ onNavigate }: { onNavigate?: () => void }) {
           <Gauge className="w-[18px] h-[18px] text-primary" strokeWidth={2.25} />
         </div>
         <span className="flex-1 min-w-0 text-left truncate">Autopilot</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-primary shrink-0">New</span>
+      </Link>
+      <Link
+        to="/discovery"
+        onClick={onNavigate}
+        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-semibold text-foreground/90 hover:text-white hover:bg-surface/70 transition-all"
+      >
+        <div className="w-8 h-8 rounded-lg grid place-items-center shrink-0 bg-surface-2/60">
+          <Telescope className="w-[18px] h-[18px] text-primary" strokeWidth={2.25} />
+        </div>
+        <span className="flex-1 min-w-0 text-left truncate">Token Discovery</span>
         <span className="text-[9px] font-bold uppercase tracking-wider text-primary shrink-0">New</span>
       </Link>
     </>

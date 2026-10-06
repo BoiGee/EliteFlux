@@ -78,5 +78,14 @@ export const getDiscoveryFeed = createServerFn({ method: "GET" })
       .order("opportunity_score", { ascending: false })
       .limit(100);
     if (error) throw new Error(error.message);
-    return { tokens: data ?? [] };
+
+    const actions = await context.supabase
+      .from("autopilot_actions")
+      .select("id,symbol,notional_usd,reference_price,conviction,rationale,state,blocked_reason,created_at,executed_at")
+      .eq("user_id", context.userId)
+      .eq("source", "discovery")
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    return { tokens: data ?? [], actions: actions.data ?? [] };
   });

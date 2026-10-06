@@ -22,6 +22,7 @@ import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DiscoveryRouteImport } from './routes/discovery'
 import { Route as AutopilotRouteImport } from './routes/autopilot'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -109,6 +110,11 @@ const McpRoute = McpRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiscoveryRoute = DiscoveryRouteImport.update({
+  id: '/discovery',
+  path: '/discovery',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutopilotRoute = AutopilotRouteImport.update({
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
   '/autopilot': typeof AutopilotRoute
+  '/discovery': typeof DiscoveryRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/owner': typeof OwnerRoute
@@ -275,6 +282,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
   '/autopilot': typeof AutopilotRoute
+  '/discovery': typeof DiscoveryRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/owner': typeof OwnerRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/alerts': typeof AlertsRoute
   '/autopilot': typeof AutopilotRoute
+  '/discovery': typeof DiscoveryRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/owner': typeof OwnerRoute
@@ -354,6 +363,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/alerts'
     | '/autopilot'
+    | '/discovery'
     | '/login'
     | '/mcp'
     | '/owner'
@@ -392,6 +402,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/alerts'
     | '/autopilot'
+    | '/discovery'
     | '/login'
     | '/mcp'
     | '/owner'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/alerts'
     | '/autopilot'
+    | '/discovery'
     | '/login'
     | '/mcp'
     | '/owner'
@@ -469,6 +481,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AlertsRoute: typeof AlertsRoute
   AutopilotRoute: typeof AutopilotRoute
+  DiscoveryRoute: typeof DiscoveryRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
   OwnerRoute: typeof OwnerRoute
@@ -593,6 +606,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discovery': {
+      id: '/discovery'
+      path: '/discovery'
+      fullPath: '/discovery'
+      preLoaderRoute: typeof DiscoveryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autopilot': {
@@ -765,6 +785,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   AlertsRoute: AlertsRoute,
   AutopilotRoute: AutopilotRoute,
+  DiscoveryRoute: DiscoveryRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
   OwnerRoute: OwnerRoute,
