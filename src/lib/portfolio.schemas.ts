@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { GUARDRAIL_BOUNDS } from "./autonomy";
+import { DISCOVERY_GUARDRAIL_BOUNDS, DISCOVERY_NETWORKS, GUARDRAIL_BOUNDS } from "./autonomy";
 
 const b = GUARDRAIL_BOUNDS;
+const db = DISCOVERY_GUARDRAIL_BOUNDS;
 
 export const connectExchangeSchema = z.object({
   venue: z.enum(["binance", "bybit", "okx", "gateio", "kucoin", "mexc"]),
@@ -55,6 +56,23 @@ export const decideSchema = z.object({
 });
 
 export const keyPolicySchema = z.object({ readonlyOnly: z.boolean() });
+
+export const discoverySettingsSchema = z.object({
+  opted_in: z.boolean().optional(),
+  armed: z.boolean().optional(),
+  kill_switch: z.boolean().optional(),
+  min_safety_score: z.number().int().min(db.min_safety_score.min).max(db.min_safety_score.max).optional(),
+  max_position_usd: z.number().min(db.max_position_usd.min).max(db.max_position_usd.max).optional(),
+  total_allocation_budget_usd: z
+    .number()
+    .min(db.total_allocation_budget_usd.min)
+    .max(db.total_allocation_budget_usd.max)
+    .optional(),
+  max_open_positions: z.number().int().min(db.max_open_positions.min).max(db.max_open_positions.max).optional(),
+  allowed_networks: z.array(z.enum(DISCOVERY_NETWORKS)).max(DISCOVERY_NETWORKS.length).optional(),
+});
+
+export const acceptDiscoveryDisclosureSchema = z.object({ accept: z.literal(true) });
 
 /**
  * Turn a raw exchange rejection into a next step a beginner can actually take.

@@ -34,9 +34,12 @@ export const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, elite: 2 };
  * "portfolio" (connecting exchanges/wallets) is Operator+, per the pricing
  * page and coach-knowledge.ts's PLANS.pro entry. "autopilot" (arming
  * automated trade execution) is Elite-only, per PLANS.elite and
- * coach-knowledge.ts FEATURES' `autopilot` entry (`plan: "elite"`). Both
- * must be enforced server-side wherever they're checked — a disabled button
- * in the UI is not a tier gate.
+ * coach-knowledge.ts FEATURES' `autopilot` entry (`plan: "elite"`).
+ * "token-discovery" (early/unlisted token scanning) is also Elite-only —
+ * it's the highest-risk asset class on the platform (unverified DEX
+ * tokens, paper-mode only), so it should not launch at a lower bar than
+ * Autopilot itself. All three must be enforced server-side wherever
+ * they're checked — a disabled button in the UI is not a tier gate.
  */
 export const TIER_ACCESS: Record<Tier, Set<string>> = {
   free: new Set(["recommendations"]),
@@ -49,7 +52,7 @@ export const TIER_ACCESS: Record<Tier, Set<string>> = {
     "recommendations", "market-flow", "heatmap", "meme", "events",
     "exit", "momentum", "sentiment", "narrative-detect", "elite-brain", "risk", "coin-intel",
     "brain-v3", "smart-money", "whale", "onchain",
-    "portfolio", "autopilot",
+    "portfolio", "autopilot", "token-discovery",
   ]),
 };
 

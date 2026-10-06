@@ -46,6 +46,13 @@ describe("tier access matrix", () => {
     expect(requiredTierFor("whale")).toBe("elite");
   });
 
+  it("gates token-discovery to elite-only, matching autopilot's own tier", () => {
+    expect(canAccess("free", "token-discovery")).toBe(false);
+    expect(canAccess("pro", "token-discovery")).toBe(false);
+    expect(canAccess("elite", "token-discovery")).toBe(true);
+    expect(requiredTierFor("token-discovery")).toBe("elite");
+  });
+
   it("ranks tiers monotonically", () => {
     expect(TIER_RANK.free).toBeLessThan(TIER_RANK.pro);
     expect(TIER_RANK.pro).toBeLessThan(TIER_RANK.elite);

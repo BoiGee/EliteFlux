@@ -7,8 +7,17 @@
 import type { DiscoveryTokenSignal } from "./discovery-intel";
 import { computeDiscoveryTokenSignal } from "./discovery-intel";
 import { buildRawTokenData, fetchNewPairs, DISCOVERY_NETWORKS, type DiscoveredPair } from "./discovery-providers.server";
+import { DISCOVERY_DEFAULT_SETTINGS, type DiscoverySettings } from "./autonomy";
 
 type Admin = { from: (t: string) => any };
+
+export async function loadDiscoverySettings(db: Admin, userId: string): Promise<DiscoverySettings> {
+  const { data } = await db.from("discovery_settings").select("*").eq("user_id", userId).maybeSingle();
+  if (data) return data as DiscoverySettings;
+  const seed = { user_id: userId, ...DISCOVERY_DEFAULT_SETTINGS };
+  await db.from("discovery_settings").insert(seed as never);
+  return { ...seed, disclosure_accepted_at: null } as DiscoverySettings;
+}
 
 /** A scan caps how many brand-new candidates get a full safety-check spend per cycle — ranked by the cheap discovery-feed's own liquidity field first. Already-tracked active tokens are always re-checked regardless of this cap (see runDiscoveryScan). */
 const MAX_NEW_CANDIDATES_PER_SCAN = 30;

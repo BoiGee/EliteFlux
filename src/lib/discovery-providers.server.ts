@@ -14,6 +14,7 @@
 // per the implementation plan's own verification step. Don't trust this
 // file's parsing as correct-by-construction.
 import type { RawTokenData } from "./discovery-intel";
+export { DISCOVERY_NETWORKS } from "./autonomy";
 
 const TIMEOUT_MS = 8_000;
 
@@ -410,6 +411,3 @@ export async function buildRawTokenData(pair: DiscoveredPair): Promise<RawTokenD
     freezeAuthorityRevoked: null,
   };
 }
-
-/** Networks covered on day one — plain constant, no env override needed yet. */
-export const DISCOVERY_NETWORKS = ["eth", "bsc", "base", "arbitrum", "solana"] as const;
