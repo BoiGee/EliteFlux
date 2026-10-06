@@ -107,7 +107,12 @@ async function fetchGeckoTerminalNewPools(network: string): Promise<DiscoveredPa
 
     out.push({
       network,
-      tokenAddress: token.address.toLowerCase(),
+      // EVM addresses are case-insensitive hex, lowercased for consistent
+      // lookups/keys; Solana base58 addresses are case-sensitive — mangling
+      // one corrupts it into an address nothing resolves to, which silently
+      // fails every safety check downstream (fail-closed, but for the wrong
+      // reason: "address wrong" reads identically to "data unavailable").
+      tokenAddress: isSolana(network) ? token.address : token.address.toLowerCase(),
       pairAddress: a.address,
       symbol: token.symbol,
       name: token.name ?? token.symbol,
@@ -158,7 +163,7 @@ async function fetchDexScreenerNewPairs(network: string): Promise<DiscoveredPair
     if (p.chainId !== chainId || !p.pairAddress || !p.baseToken?.address || !p.baseToken.symbol) continue;
     out.push({
       network,
-      tokenAddress: p.baseToken.address.toLowerCase(),
+      tokenAddress: isSolana(network) ? p.baseToken.address : p.baseToken.address.toLowerCase(),
       pairAddress: p.pairAddress,
       symbol: p.baseToken.symbol,
       name: p.baseToken.name ?? p.baseToken.symbol,

@@ -29,9 +29,18 @@ function raw(over: Partial<RawTokenData> = {}): RawTokenData {
 }
 
 function solanaRaw(over: Partial<RawTokenData> = {}): RawTokenData {
+  // Matches what discovery-providers.server.ts's buildRawTokenData actually
+  // produces for Solana — isHoneypot/buyTaxPct/sellTaxPct/sourceVerified/
+  // ownerRenounced are always null there (no Solana data source for them),
+  // not just "not set in this test". A fixture that defaulted these to
+  // EVM-shaped values once hid a real bug: not_honeypot/tax_within_bounds
+  // being evaluated for every chain meant no Solana token could ever pass.
   return raw({
     network: "solana",
     tokenAddress: "SoLmintAddress",
+    isHoneypot: null,
+    buyTaxPct: null,
+    sellTaxPct: null,
     sourceVerified: null,
     ownerRenounced: null,
     mintAuthorityRevoked: true,
@@ -102,18 +111,21 @@ describe("computeSafetyGate", () => {
     expect(ids).not.toContain("freeze_authority_revoked");
   });
 
-  it("only evaluates Solana-applicable checks for a Solana token (no contract-verified/owner-renounced checks)", () => {
+  it("only evaluates Solana-applicable checks for a Solana token (no EVM-only checks, including honeypot/tax)", () => {
     const gate = computeSafetyGate(solanaRaw());
     const ids = gate.checks.map((c) => c.id);
     expect(ids).toContain("mint_authority_revoked");
     expect(ids).toContain("freeze_authority_revoked");
     expect(ids).not.toContain("contract_verified");
     expect(ids).not.toContain("owner_renounced");
+    expect(ids).not.toContain("not_honeypot");
+    expect(ids).not.toContain("tax_within_bounds");
   });
 
-  it("passes a well-formed Solana token", () => {
+  it("passes a well-formed Solana token even though isHoneypot/tax are null (no Solana data source for them)", () => {
     const gate = computeSafetyGate(solanaRaw());
     expect(gate.passed).toBe(true);
+    expect(gate.failedReasons).toHaveLength(0);
   });
 
   it("fails a Solana token whose mint authority hasn't been revoked", () => {

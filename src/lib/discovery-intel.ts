@@ -24,12 +24,12 @@
 
 export type SafetyCheckId =
   | "contract_verified" // EVM only
-  | "not_honeypot" // both
+  | "not_honeypot" // EVM only — no Solana data source supplies this; mint/freeze authority are Solana's equivalent trust signal
   | "mint_authority_revoked" // Solana only
   | "freeze_authority_revoked" // Solana only
   | "lp_locked_or_burned" // both
   | "owner_renounced" // EVM only
-  | "tax_within_bounds" // both
+  | "tax_within_bounds" // EVM only — same reason as not_honeypot; SPL tokens don't have arbitrary transfer-tax hooks in the standard token model
   | "holder_concentration" // both
   | "liquidity_floor"; // both
 
@@ -165,17 +165,25 @@ export function computeSafetyGate(raw: RawTokenData): SafetyGateVerdict {
           ? "ownership renounced"
           : "owner retains privileged control",
     );
+    add(
+      "not_honeypot",
+      raw.isHoneypot === false ? "pass" : raw.isHoneypot === true ? "fail" : "unavailable",
+      raw.isHoneypot === null
+        ? "honeypot check unavailable — treated as unsafe"
+        : raw.isHoneypot
+          ? "honeypot behavior detected — sells may be blocked"
+          : "no honeypot behavior detected",
+    );
+    const taxUnavailable = raw.buyTaxPct === null || raw.sellTaxPct === null;
+    const taxTooHigh = !taxUnavailable && (raw.buyTaxPct! > MAX_TAX_PCT || raw.sellTaxPct! > MAX_TAX_PCT);
+    add(
+      "tax_within_bounds",
+      taxUnavailable ? "unavailable" : taxTooHigh ? "fail" : "pass",
+      taxUnavailable
+        ? "buy/sell tax unavailable — treated as unsafe"
+        : `buy ${raw.buyTaxPct!.toFixed(1)}% / sell ${raw.sellTaxPct!.toFixed(1)}% (cap ${MAX_TAX_PCT}%)`,
+    );
   }
-
-  add(
-    "not_honeypot",
-    raw.isHoneypot === false ? "pass" : raw.isHoneypot === true ? "fail" : "unavailable",
-    raw.isHoneypot === null
-      ? "honeypot check unavailable — treated as unsafe"
-      : raw.isHoneypot
-        ? "honeypot behavior detected — sells may be blocked"
-        : "no honeypot behavior detected",
-  );
 
   add(
     "lp_locked_or_burned",
@@ -183,16 +191,6 @@ export function computeSafetyGate(raw: RawTokenData): SafetyGateVerdict {
     raw.lpLockedPct === null
       ? "LP lock status unavailable — treated as unsafe"
       : `${raw.lpLockedPct.toFixed(0)}% of liquidity locked/burned (need ${LP_LOCK_MIN_PCT}%+)`,
-  );
-
-  const taxUnavailable = raw.buyTaxPct === null || raw.sellTaxPct === null;
-  const taxTooHigh = !taxUnavailable && (raw.buyTaxPct! > MAX_TAX_PCT || raw.sellTaxPct! > MAX_TAX_PCT);
-  add(
-    "tax_within_bounds",
-    taxUnavailable ? "unavailable" : taxTooHigh ? "fail" : "pass",
-    taxUnavailable
-      ? "buy/sell tax unavailable — treated as unsafe"
-      : `buy ${raw.buyTaxPct!.toFixed(1)}% / sell ${raw.sellTaxPct!.toFixed(1)}% (cap ${MAX_TAX_PCT}%)`,
   );
 
   add(
