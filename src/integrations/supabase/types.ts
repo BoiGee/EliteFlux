@@ -200,6 +200,7 @@ export type Database = {
           conviction: number | null
           created_at: string
           decided_at: string | null
+          discovered_token_id: string | null
           executed_at: string | null
           executing_since: string | null
           expires_at: string | null
@@ -212,6 +213,7 @@ export type Database = {
           rationale: string
           reference_price: number | null
           size_pct: number | null
+          source: string
           state: Database["public"]["Enums"]["action_state"]
           symbol: string
           user_id: string
@@ -222,6 +224,7 @@ export type Database = {
           conviction?: number | null
           created_at?: string
           decided_at?: string | null
+          discovered_token_id?: string | null
           executed_at?: string | null
           executing_since?: string | null
           expires_at?: string | null
@@ -234,6 +237,7 @@ export type Database = {
           rationale: string
           reference_price?: number | null
           size_pct?: number | null
+          source?: string
           state?: Database["public"]["Enums"]["action_state"]
           symbol: string
           user_id: string
@@ -244,6 +248,7 @@ export type Database = {
           conviction?: number | null
           created_at?: string
           decided_at?: string | null
+          discovered_token_id?: string | null
           executed_at?: string | null
           executing_since?: string | null
           expires_at?: string | null
@@ -256,12 +261,21 @@ export type Database = {
           rationale?: string
           reference_price?: number | null
           size_pct?: number | null
+          source?: string
           state?: Database["public"]["Enums"]["action_state"]
           symbol?: string
           user_id?: string
           venue?: Database["public"]["Enums"]["exchange_venue"] | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "autopilot_actions_discovered_token_id_fkey"
+            columns: ["discovered_token_id"]
+            isOneToOne: false
+            referencedRelation: "discovered_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       autopilot_audit: {
         Row: {
@@ -604,6 +618,165 @@ export type Database = {
           day?: string
           id?: string
           messages?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      discovered_tokens: {
+        Row: {
+          band: string | null
+          buy_tax_pct: number | null
+          contributors: Json
+          created_at: string
+          dex: string | null
+          first_seen_at: string
+          freeze_authority_revoked: boolean | null
+          holder_count: number | null
+          id: string
+          is_honeypot: boolean | null
+          last_checked_at: string
+          last_fdv_usd: number | null
+          last_liquidity_usd: number | null
+          last_price_usd: number | null
+          last_volume_24h_usd: number | null
+          lp_lock_until: string | null
+          lp_locked_pct: number | null
+          mint_authority_revoked: boolean | null
+          name: string | null
+          network: string
+          opportunity_score: number | null
+          owner_renounced: boolean | null
+          pair_address: string | null
+          pool_created_at: string | null
+          quote_token_symbol: string | null
+          rationale: string | null
+          safety_gate_passed: boolean
+          safety_gate_reasons: string[]
+          safety_score: number | null
+          sell_tax_pct: number | null
+          status: string
+          symbol: string | null
+          tags: string[]
+          token_address: string
+          top10_holder_pct: number | null
+        }
+        Insert: {
+          band?: string | null
+          buy_tax_pct?: number | null
+          contributors?: Json
+          created_at?: string
+          dex?: string | null
+          first_seen_at?: string
+          freeze_authority_revoked?: boolean | null
+          holder_count?: number | null
+          id?: string
+          is_honeypot?: boolean | null
+          last_checked_at?: string
+          last_fdv_usd?: number | null
+          last_liquidity_usd?: number | null
+          last_price_usd?: number | null
+          last_volume_24h_usd?: number | null
+          lp_lock_until?: string | null
+          lp_locked_pct?: number | null
+          mint_authority_revoked?: boolean | null
+          name?: string | null
+          network: string
+          opportunity_score?: number | null
+          owner_renounced?: boolean | null
+          pair_address?: string | null
+          pool_created_at?: string | null
+          quote_token_symbol?: string | null
+          rationale?: string | null
+          safety_gate_passed?: boolean
+          safety_gate_reasons?: string[]
+          safety_score?: number | null
+          sell_tax_pct?: number | null
+          status?: string
+          symbol?: string | null
+          tags?: string[]
+          token_address: string
+          top10_holder_pct?: number | null
+        }
+        Update: {
+          band?: string | null
+          buy_tax_pct?: number | null
+          contributors?: Json
+          created_at?: string
+          dex?: string | null
+          first_seen_at?: string
+          freeze_authority_revoked?: boolean | null
+          holder_count?: number | null
+          id?: string
+          is_honeypot?: boolean | null
+          last_checked_at?: string
+          last_fdv_usd?: number | null
+          last_liquidity_usd?: number | null
+          last_price_usd?: number | null
+          last_volume_24h_usd?: number | null
+          lp_lock_until?: string | null
+          lp_locked_pct?: number | null
+          mint_authority_revoked?: boolean | null
+          name?: string | null
+          network?: string
+          opportunity_score?: number | null
+          owner_renounced?: boolean | null
+          pair_address?: string | null
+          pool_created_at?: string | null
+          quote_token_symbol?: string | null
+          rationale?: string | null
+          safety_gate_passed?: boolean
+          safety_gate_reasons?: string[]
+          safety_score?: number | null
+          sell_tax_pct?: number | null
+          status?: string
+          symbol?: string | null
+          tags?: string[]
+          token_address?: string
+          top10_holder_pct?: number | null
+        }
+        Relationships: []
+      }
+      discovery_settings: {
+        Row: {
+          allowed_networks: string[]
+          armed: boolean
+          created_at: string
+          disclosure_accepted_at: string | null
+          kill_switch: boolean
+          max_open_positions: number
+          max_position_usd: number
+          min_safety_score: number
+          opted_in: boolean
+          total_allocation_budget_usd: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allowed_networks?: string[]
+          armed?: boolean
+          created_at?: string
+          disclosure_accepted_at?: string | null
+          kill_switch?: boolean
+          max_open_positions?: number
+          max_position_usd?: number
+          min_safety_score?: number
+          opted_in?: boolean
+          total_allocation_budget_usd?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allowed_networks?: string[]
+          armed?: boolean
+          created_at?: string
+          disclosure_accepted_at?: string | null
+          kill_switch?: boolean
+          max_open_positions?: number
+          max_position_usd?: number
+          min_safety_score?: number
+          opted_in?: boolean
+          total_allocation_budget_usd?: number
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
