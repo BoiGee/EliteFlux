@@ -347,6 +347,15 @@ export const FEATURES: FeatureDoc[] = [
     keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve"],
   },
   {
+    key: "token-discovery",
+    title: "Token Discovery",
+    where: "/discovery",
+    what: "Screens brand-new tokens on decentralized exchanges — before they're ever listed on a centralized exchange like Binance or Bybit — and scores each one 0-100 on two separate things: a safety gate (contract/mint checks, whether the liquidity is locked, how concentrated the holders are, tax, honeypot behavior) and, only for tokens that clear it, an opportunity score (liquidity depth, holder distribution, trading momentum, how long it's survived so far). A token that fails the safety gate always shows an opportunity score of 0, no matter how good the other numbers look — safety is a hard pass/fail, never blended into the opportunity number. Covers both Ethereum-style chains and Solana. This is paper-mode only: EliteFlux has no way to sign a real on-chain transaction, so every position here is simulated, by construction, not just by a setting you could switch — it's a separate, stricter, opt-in feature from Autopilot, with its own disclosure, its own much smaller position-size caps, and its own kill switch. The safety score is a screen, not a guarantee — it can't see many wallets secretly controlled by one person, or a trap that only activates after launch.",
+    eli5: "A lookout for coins too new to be on the big exchanges yet, that checks each one for obvious red flags before even pretending to buy it.",
+    plan: "elite",
+    keywords: ["token discovery", "discovery", "new token", "unlisted", "dex", "rug pull", "safety score", "opportunity score", "solana", "paper mode"],
+  },
+  {
     key: "security",
     title: "Security & key safety",
     where: "/security",
@@ -477,6 +486,19 @@ export const HOW_TO: HowToDoc[] = [
     keywords: ["approve", "reject", "proposal", "pending", "action"],
   },
   {
+    key: "set-up-discovery",
+    title: "Turn on Token Discovery",
+    steps: [
+      "Open /discovery and switch on 'Opt in to Token Discovery' — separate consent from Autopilot, since this covers unverified, brand-new DEX tokens, not the curated coin list.",
+      "Set your guardrails: minimum safety score, max size per paper position, total paper allocation budget, max open positions, and optionally which networks to include.",
+      "Read the disclosure and accept it — you can't arm until you have.",
+      "Arm it. Every position it takes from here is simulated; no real order is ever placed.",
+      "Use the kill switch at any time to stop new paper positions immediately.",
+    ],
+    eli5: "You turn it on, tell it how cautious to be, confirm you understand the risk, and then it starts practicing with pretend money.",
+    keywords: ["token discovery", "discovery", "opt in", "arm", "guardrail", "kill switch", "paper"],
+  },
+  {
     key: "link-telegram",
     title: "Sign in with Telegram or get alerts there",
     steps: [
@@ -538,6 +560,7 @@ export const PLANS = [
       "Whale activity, smart money clustering, real on-chain wallet tracking, options market read, macro correlation and deep cognition",
       "Scenario stress-testing on your own holdings",
       "Autopilot with the full autonomy dial and guardrails",
+      "Token Discovery — paper-mode screening of brand-new, not-yet-listed DEX tokens",
       "Telegram and webhook alerts (up to 100), and 45 Flux the AI Coach messages per day",
     ],
     eli5: "The full cockpit, every layer switched on, plus a helper that can act for you within your rules — and what every new account gets to try free for 7 days.",
@@ -586,6 +609,11 @@ export const GLOSSARY: GlossaryDoc[] = [
   { term: "Community trust", eli5: "What EliteFlux's own users think of a pick, based on their thumbs up / thumbs down ratings." },
   { term: "Crowd positioning", eli5: "What EliteFlux's own users are actually doing with a coin — accumulating, reducing, watching or avoiding — based on their logged journal calls, not ratings." },
   { term: "Concentration risk", eli5: "Having too much of your portfolio riding on a single asset." },
+  { term: "Liquidity lock", eli5: "A promise, checked on-chain, that the trading pool backing a token can't be pulled out by its creator for some time. An unlocked pool is one way a rug pull happens." },
+  { term: "Honeypot", eli5: "A token built so you can buy it but can't sell it. The price looks great right up until you try to get out." },
+  { term: "Mint authority", eli5: "On Solana, whoever holds this can create more of a token out of thin air at will. Revoked means nobody can anymore." },
+  { term: "Freeze authority", eli5: "On Solana, whoever holds this can freeze other people's token accounts so they can't move or sell. Revoked means nobody can anymore." },
+  { term: "Safety gate", eli5: "A pass/fail checklist a brand-new token must clear completely before it's shown an opportunity score at all. Fail one check and the opportunity score is 0, however good everything else looks." },
 ];
 
 // ---------------------------------------------------------------------------
