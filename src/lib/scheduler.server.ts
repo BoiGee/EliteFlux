@@ -11,6 +11,7 @@
 //     (see server.ts) via Cloudflare Cron Triggers (wrangler.jsonc
 //     `triggers.crons`), one job per registered cron pattern.
 import {
+  runDiscoverTokensJob,
   runEvaluateAlertsJob,
   runExpireSubsJob,
   runFastAlertsJob,
@@ -23,6 +24,7 @@ const SETTLE_PAYMENTS_INTERVAL_MS = 60 * 60_000; // expects <=120min
 const EXPIRE_SUBS_INTERVAL_MS = 12 * 60 * 60_000; // expects <=1500min (~25h)
 const FAST_ALERTS_INTERVAL_MS = 60_000; // momentum/exit-pressure/price alerts can't wait 5 minutes
 const RETENTION_CLEANUP_INTERVAL_MS = 24 * 60 * 60_000; // expects <=1500min (~25h) — daily housekeeping
+const DISCOVER_TOKENS_INTERVAL_MS = 10 * 60_000; // new pairs shouldn't go stale, but stay clear of free-tier provider rate limits and evaluate-alerts' own 5-minute cycle
 
 const FIRST_RUN_DELAY_MS = 15_000; // let the dev server settle before the first tick
 
@@ -44,6 +46,7 @@ const tickSettlePayments = () => runJob("settle-payments", () => withAdmin(runSe
 const tickExpireSubs = () => runJob("expire-subs", () => withAdmin(runExpireSubsJob));
 const tickFastAlerts = () => runJob("evaluate-alerts-fast", () => withAdmin(runFastAlertsJob));
 const tickRetentionCleanup = () => runJob("retention-cleanup", () => withAdmin(runRetentionCleanupJob));
+const tickDiscoverTokens = () => runJob("discover-tokens", () => withAdmin(runDiscoverTokensJob));
 
 /** Local dev only (persistent Node/Bun process) — see runScheduledTick for Workers. */
 export function startScheduler(): void {
@@ -76,8 +79,13 @@ export function startScheduler(): void {
     setInterval(tickRetentionCleanup, RETENTION_CLEANUP_INTERVAL_MS);
   }, FIRST_RUN_DELAY_MS + 15_000);
 
+  setTimeout(() => {
+    void tickDiscoverTokens();
+    setInterval(tickDiscoverTokens, DISCOVER_TOKENS_INTERVAL_MS);
+  }, FIRST_RUN_DELAY_MS + 25_000);
+
   console.log(
-    "[scheduler] started — evaluate-alerts every 5min, fast-lane alerts every 60s, settle-payments hourly, expire-subs every 12h, retention-cleanup daily",
+    "[scheduler] started — evaluate-alerts every 5min, fast-lane alerts every 60s, settle-payments hourly, expire-subs every 12h, retention-cleanup daily, discover-tokens every 10min",
   );
 }
 
@@ -90,6 +98,7 @@ export const CRON_JOBS: Record<string, () => Promise<void>> = {
   "0 * * * *": tickSettlePayments,
   "0 */12 * * *": tickExpireSubs,
   "0 3 * * *": tickRetentionCleanup,
+  "*/10 * * * *": tickDiscoverTokens,
 };
 
 /** Cloudflare Workers `scheduled` handler entry point — see server.ts. */

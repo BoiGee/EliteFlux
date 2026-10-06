@@ -9,6 +9,8 @@ export interface FeatureFlags {
   autopilot: boolean;
   payments: boolean;
   coach: boolean;
+  /** Independent of `autopilot` — token discovery is a separate, higher-risk asset class with its own opt-in (discovery_settings). Defaults off: a brand-new external-data-dependent feature should be explicitly turned on once verified live, not auto-enabled for everyone on deploy. */
+  tokenDiscovery: boolean;
 }
 
 export interface SignupMode {
@@ -16,7 +18,7 @@ export interface SignupMode {
   code: string;
 }
 
-export const DEFAULT_FLAGS: FeatureFlags = { autopilot: true, payments: true, coach: true };
+export const DEFAULT_FLAGS: FeatureFlags = { autopilot: true, payments: true, coach: true, tokenDiscovery: false };
 export const DEFAULT_SIGNUP: SignupMode = { mode: "open", code: "" };
 
 async function readSetting<T>(admin: Admin, key: string, fallback: T): Promise<T> {

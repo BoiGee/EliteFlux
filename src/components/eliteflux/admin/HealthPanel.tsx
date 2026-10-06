@@ -17,6 +17,7 @@ const JOBS = [
   { id: "settle-payments", label: "Re-check pending payments" },
   { id: "expire-subs", label: "Expire lapsed plans" },
   { id: "retention-cleanup", label: "Run retention cleanup" },
+  { id: "discover-tokens", label: "Scan for new tokens now" },
 ] as const;
 
 /** Plain-English name for whichever venue served the current prices. */

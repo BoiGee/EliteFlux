@@ -31,7 +31,7 @@ export function LaunchControls({ canManageCoach = false }: { canManageCoach?: bo
 
   const flags = q.data?.flags;
   const signup = q.data?.signup;
-  const switches = (["autopilot", "payments", "coach"] as const).filter((f) => f !== "coach" || canManageCoach);
+  const switches = (["autopilot", "payments", "coach", "tokenDiscovery"] as const).filter((f) => f !== "coach" || canManageCoach);
 
   return (
     <section className="glass-card p-4 sm:p-5">
@@ -80,7 +80,7 @@ export function LaunchControls({ canManageCoach = false }: { canManageCoach?: bo
                 return (
                   <button
                     key={f}
-                    onClick={() => save({ flags: { ...(flags ?? { autopilot: true, payments: true, coach: true }), [f]: !on } })}
+                    onClick={() => save({ flags: { ...(flags ?? { autopilot: true, payments: true, coach: true, tokenDiscovery: false }), [f]: !on } })}
                     className={`text-xs px-3 py-1.5 rounded-md border capitalize ${
                       on ? "border-bull/50 text-bull" : "border-bear/50 text-bear"
                     }`}

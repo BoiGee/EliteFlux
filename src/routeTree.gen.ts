@@ -39,6 +39,7 @@ import { Route as ApiPublicMarketFeedRouteImport } from './routes/api/public/mar
 import { Route as ApiPublicExpireSubsRouteImport } from './routes/api/public/expire-subs'
 import { Route as ApiPublicEvaluateAlertsFastRouteImport } from './routes/api/public/evaluate-alerts-fast'
 import { Route as ApiPublicEvaluateAlertsRouteImport } from './routes/api/public/evaluate-alerts'
+import { Route as ApiPublicDiscoverTokensRouteImport } from './routes/api/public/discover-tokens'
 import { Route as ApiBrainWhaleRouteImport } from './routes/api/brain/whale'
 import { Route as ApiBrainV3RouteImport } from './routes/api/brain/v3'
 import { Route as ApiBrainSentimentRouteImport } from './routes/api/brain/sentiment'
@@ -199,6 +200,11 @@ const ApiPublicEvaluateAlertsRoute = ApiPublicEvaluateAlertsRouteImport.update({
   path: '/api/public/evaluate-alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicDiscoverTokensRoute = ApiPublicDiscoverTokensRouteImport.update({
+  id: '/api/public/discover-tokens',
+  path: '/api/public/discover-tokens',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBrainWhaleRoute = ApiBrainWhaleRouteImport.update({
   id: '/api/brain/whale',
   path: '/api/brain/whale',
@@ -254,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
+  '/api/public/discover-tokens': typeof ApiPublicDiscoverTokensRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
   '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
@@ -291,6 +298,7 @@ export interface FileRoutesByTo {
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
+  '/api/public/discover-tokens': typeof ApiPublicDiscoverTokensRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
   '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
@@ -329,6 +337,7 @@ export interface FileRoutesById {
   '/api/brain/sentiment': typeof ApiBrainSentimentRoute
   '/api/brain/v3': typeof ApiBrainV3Route
   '/api/brain/whale': typeof ApiBrainWhaleRoute
+  '/api/public/discover-tokens': typeof ApiPublicDiscoverTokensRoute
   '/api/public/evaluate-alerts': typeof ApiPublicEvaluateAlertsRoute
   '/api/public/evaluate-alerts-fast': typeof ApiPublicEvaluateAlertsFastRoute
   '/api/public/expire-subs': typeof ApiPublicExpireSubsRoute
@@ -368,6 +377,7 @@ export interface FileRouteTypes {
     | '/api/brain/sentiment'
     | '/api/brain/v3'
     | '/api/brain/whale'
+    | '/api/public/discover-tokens'
     | '/api/public/evaluate-alerts'
     | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
@@ -405,6 +415,7 @@ export interface FileRouteTypes {
     | '/api/brain/sentiment'
     | '/api/brain/v3'
     | '/api/brain/whale'
+    | '/api/public/discover-tokens'
     | '/api/public/evaluate-alerts'
     | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
@@ -442,6 +453,7 @@ export interface FileRouteTypes {
     | '/api/brain/sentiment'
     | '/api/brain/v3'
     | '/api/brain/whale'
+    | '/api/public/discover-tokens'
     | '/api/public/evaluate-alerts'
     | '/api/public/evaluate-alerts-fast'
     | '/api/public/expire-subs'
@@ -480,6 +492,7 @@ export interface RootRouteChildren {
   ApiBrainSentimentRoute: typeof ApiBrainSentimentRoute
   ApiBrainV3Route: typeof ApiBrainV3Route
   ApiBrainWhaleRoute: typeof ApiBrainWhaleRoute
+  ApiPublicDiscoverTokensRoute: typeof ApiPublicDiscoverTokensRoute
   ApiPublicEvaluateAlertsRoute: typeof ApiPublicEvaluateAlertsRoute
   ApiPublicEvaluateAlertsFastRoute: typeof ApiPublicEvaluateAlertsFastRoute
   ApiPublicExpireSubsRoute: typeof ApiPublicExpireSubsRoute
@@ -701,6 +714,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicEvaluateAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/discover-tokens': {
+      id: '/api/public/discover-tokens'
+      path: '/api/public/discover-tokens'
+      fullPath: '/api/public/discover-tokens'
+      preLoaderRoute: typeof ApiPublicDiscoverTokensRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/brain/whale': {
       id: '/api/brain/whale'
       path: '/api/brain/whale'
@@ -769,6 +789,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBrainSentimentRoute: ApiBrainSentimentRoute,
   ApiBrainV3Route: ApiBrainV3Route,
   ApiBrainWhaleRoute: ApiBrainWhaleRoute,
+  ApiPublicDiscoverTokensRoute: ApiPublicDiscoverTokensRoute,
   ApiPublicEvaluateAlertsRoute: ApiPublicEvaluateAlertsRoute,
   ApiPublicEvaluateAlertsFastRoute: ApiPublicEvaluateAlertsFastRoute,
   ApiPublicExpireSubsRoute: ApiPublicExpireSubsRoute,

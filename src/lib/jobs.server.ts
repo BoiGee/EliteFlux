@@ -124,6 +124,25 @@ export async function runEvaluateAlertsJob(admin: Admin): Promise<EvaluateAlerts
       // flagship list (widened whale topSignals) — without a matching price
       // here, those events would never be able to resolve.
       const resolvePrices: Record<string, { price: number }> = { ...metrics.priceBySymbol, ...brainResult.baselineTickers };
+      // resolveSignalOutcomes isn't signal_type-scoped — it's one shared
+      // resolution pass across every signal type, including token_discovery
+      // events recorded by discover-tokens' own cron cycle. Merging a
+      // bounded, recently-checked slice of discovered_tokens in here (rather
+      // than calling resolveSignalOutcomes a second time from that job)
+      // avoids two jobs racing the same unresolved-events query for no benefit.
+      try {
+        const since = new Date(Date.now() - 2 * 3600_000).toISOString();
+        const { data: discoveryPrices } = await admin
+          .from("discovered_tokens")
+          .select("network,token_address,last_price_usd")
+          .gte("last_checked_at", since)
+          .not("last_price_usd", "is", null);
+        for (const row of (discoveryPrices ?? []) as Array<{ network: string; token_address: string; last_price_usd: number }>) {
+          resolvePrices[`${row.network}:${row.token_address}`] = { price: row.last_price_usd };
+        }
+      } catch (e) {
+        console.error("failed to merge discovery prices into resolveSignalOutcomes", e);
+      }
       const r = await resolveSignalOutcomes(admin as never, resolvePrices);
       learning.resolved = r.resolved;
       learning.closed = r.closed;
@@ -870,6 +889,45 @@ export async function runRetentionCleanupJob(admin: Admin): Promise<RetentionCle
     return { ok: true, deleted, errors, ts: new Date().toISOString() };
   } catch (e) {
     await finishRun(admin, run, { status: "failed", errors: errors + 1, detail: { msg: e instanceof Error ? e.message : "unknown" } });
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Token discovery — see discovery.server.ts for the actual scan logic and
+// discovery-intel.ts for the pure scoring. This job only detects/verifies/
+// scores and records a gradeable signal_events row per gate-passed token;
+// per-user paper-mode proposal/execution is wired in separately once
+// discovery.server.ts's runDiscoveryForUser lands (plan step 7).
+// ---------------------------------------------------------------------------
+
+export type DiscoverTokensResult =
+  | { ok: true; skipped: string }
+  | { ok: true; scanned: number; safetyPassed: number; signalsRecorded: number; errors: number };
+
+export async function runDiscoverTokensJob(admin: Admin): Promise<DiscoverTokensResult> {
+  const run = await beginRun(admin, "discover-tokens");
+  if (!run) return { ok: true, skipped: "another run is in progress" };
+
+  try {
+    const { isFeatureEnabled } = await import("./platform.server");
+    if (!(await isFeatureEnabled(admin as never, "tokenDiscovery"))) {
+      await finishRun(admin, run, { status: "skipped", detail: { msg: "feature disabled" } });
+      return { ok: true, skipped: "feature disabled" };
+    }
+
+    const { runDiscoveryScan } = await import("./discovery.server");
+    const r = await runDiscoveryScan(admin as never);
+
+    await finishRun(admin, run, {
+      status: r.errors > 0 && r.scanned === r.errors ? "failed" : "ok",
+      errors: r.errors,
+      evaluated: r.scanned,
+      detail: r as never,
+    });
+    return { ok: true, ...r };
+  } catch (e) {
+    await finishRun(admin, run, { status: "failed", errors: 1, detail: { msg: e instanceof Error ? e.message : "unknown" } });
     throw e;
   }
 }

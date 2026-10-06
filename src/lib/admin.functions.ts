@@ -51,7 +51,7 @@ export const verifyOwner = createServerFn({ method: "POST" })
 // Must match wrangler.jsonc's triggers.crons / scheduler.server.ts's
 // CRON_JOBS exactly (evaluate-alerts-fast: * * * * *, evaluate-alerts:
 // */5 * * * *, settle-payments: 0 * * * *, expire-subs: 0 */12 * * *,
-// retention-cleanup: 0 3 * * *) — confirmed live via audit that these had
+// retention-cleanup: 0 3 * * *, discover-tokens: */10 * * * *) — confirmed live via audit that these had
 // drifted badly out of sync with the real schedule (evaluate-alerts was set
 // to 20min instead of 5, evaluate-alerts-fast to 5min instead of 1), which
 // meant getSystemHealth's "stale: ageMin > intervalMin * 2" only fired
@@ -65,6 +65,7 @@ export const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "settle-payments": 60,
   "expire-subs": 720,
   "retention-cleanup": 1440,
+  "discover-tokens": 10,
 };
 
 /** Operational health: last background run, delivery failures, data freshness. */
@@ -637,7 +638,7 @@ export const runBackgroundJob = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
-        job: z.enum(["evaluate-alerts", "evaluate-alerts-fast", "expire-subs", "settle-payments", "retention-cleanup"]),
+        job: z.enum(["evaluate-alerts", "evaluate-alerts-fast", "expire-subs", "settle-payments", "retention-cleanup", "discover-tokens"]),
       })
       .parse(input),
   )
@@ -800,7 +801,7 @@ export const setPlatformControls = createServerFn({ method: "POST" })
     z
       .object({
         flags: z
-          .object({ autopilot: z.boolean(), payments: z.boolean(), coach: z.boolean() })
+          .object({ autopilot: z.boolean(), payments: z.boolean(), coach: z.boolean(), tokenDiscovery: z.boolean() })
           .optional(),
         signup: z.object({ mode: z.enum(["open", "invite"]), code: z.string().max(64) }).optional(),
       })

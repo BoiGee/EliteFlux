@@ -37,6 +37,7 @@ const JOB_TO_CRON: Record<string, string> = {
   "settle-payments": "0 * * * *",
   "expire-subs": "0 */12 * * *",
   "retention-cleanup": "0 3 * * *",
+  "discover-tokens": "*/10 * * * *",
 };
 
 describe("EXPECTED_INTERVAL_MIN stays in sync with the real cron schedule", () => {
