@@ -21,13 +21,19 @@ export const updateDiscoverySettings = createServerFn({ method: "POST" })
     await assertTier(context.supabase as never, context.userId, "token-discovery");
 
     const { loadDiscoverySettings } = await import("@/lib/discovery.server");
-    await loadDiscoverySettings(context.supabase as never, context.userId); // ensures the row exists before updating
+    const current = await loadDiscoverySettings(context.supabase as never, context.userId);
 
     const patch: Record<string, unknown> = { ...data };
     // Opting out always drops armed — re-arming after opting back in is a
     // deliberate, separate step (matches autopilot's armed-reset-on-
     // level-change behavior).
     if (data.opted_in === false) patch["armed"] = false;
+
+    if (data.armed === true) {
+      const effectiveOptedIn = data.opted_in ?? current.opted_in;
+      if (!effectiveOptedIn) throw new Error("Opt in to token discovery first.");
+      if (!current.disclosure_accepted_at) throw new Error("Accept the discovery risk disclosure first.");
+    }
 
     const { error } = await context.supabase
       .from("discovery_settings")
