@@ -622,6 +622,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 
 export const CHANGELOG: ChangeDoc[] = [
   {
+    date: "2026-10-06",
+    title: "New: Token Discovery — paper-mode screening of brand-new, unlisted tokens",
+    detail:
+      "A new Elite feature at /discovery scans for tokens that just launched on a decentralized exchange, before they're listed anywhere like Binance or Bybit. Every token goes through a hard safety gate first (contract/mint checks, liquidity lock, holder concentration, tax, honeypot behavior) — only tokens that clear every check get an opportunity score at all; a token that fails shows 0, regardless of how good its other numbers look. This is paper-mode only: EliteFlux has no way to sign a real on-chain transaction, so every position here is simulated by construction, not by a setting. It's a separate, stricter opt-in from Autopilot, with its own disclosure and much smaller position-size caps. Covers Ethereum-style chains and Solana.",
+  },
+  {
     date: "2026-09-22",
     title: "Autopilot trims lighter when it still has real conviction in the position",
     detail:
