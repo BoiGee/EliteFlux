@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, Inbox, Lock, Power, ShieldAlert, Sliders, Wallet, X } from "lucide-react";
+import { ArrowLeft, Check, Inbox, Lock, Power, Repeat, ShieldAlert, Sliders, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ import {
   AUTONOMY_LEVELS,
   GUARDRAIL_BOUNDS,
   RISK_DISCLOSURE,
+  TRADING_STYLES,
   type AutonomyLevel,
+  type TradingStyle,
 } from "@/lib/autonomy";
 import { armAutopilot, decideAction, getAutopilot, setKillSwitch, updateAutopilot } from "@/lib/autopilot.functions";
 
@@ -234,6 +236,42 @@ function AutopilotPage() {
               </Link>
             </p>
           )}
+        </section>
+
+        {/* Trading style — how patient Autopilot is before reallocating a held position that's gone quiet or lagged */}
+        <section className="glass-panel rounded-xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Repeat className="w-4 h-4 text-primary" />
+            <h2 className="font-semibold">Trading style</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Controls how long Autopilot waits, and how big a gap it needs to see, before reducing a position that's
+            gone quiet or lagged the market — never a position you built yourself outside Autopilot.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-3">
+            {TRADING_STYLES.map((s) => {
+              const active = (settings?.trading_style ?? "balanced") === s.key;
+              return (
+                <button
+                  key={s.key}
+                  disabled={updateM.isPending}
+                  aria-pressed={active}
+                  onClick={() => updateM.mutate({ trading_style: s.key as TradingStyle })}
+                  className={`text-left rounded-xl p-4 transition ring-1 ${
+                    active
+                      ? "bg-primary/15 ring-primary"
+                      : "bg-surface-2/50 ring-border/50 hover:bg-surface-2 disabled:opacity-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{s.name}</span>
+                    {active && <Check className="w-4 h-4 text-primary ml-auto" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{s.blurb}</p>
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         {/* Guardrails */}

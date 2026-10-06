@@ -341,10 +341,10 @@ export const FEATURES: FeatureDoc[] = [
     key: "autopilot",
     title: "Autopilot & the autonomy dial",
     where: "/autopilot",
-    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. The drawdown guardrail only ever blocks new buys — it never blocks Autopilot's own protective exits or trims, so a bad stretch can't trap you in a losing position. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — rotating the position to your stable symbol — even if nothing else about the position looks wrong yet. A trim (not a full exit) is lightened to a smaller hedge instead of the standard cut when the coin still scores High Conviction on its own recommendation read at the same time — real risk still gets acted on, just less aggressively when the platform's own broader read still likes the position. A full exit is never softened this way, on purpose — that's the one signal meant to override everything else. The most urgent case (High Exit Pressure) is checked every minute, not just every 5 minutes, so a fast-forming exit signal doesn't sit unacted-on. Buy sizing also gets measured-edge Kelly sizing, capped at 10% of your portfolio regardless of edge strength — on accounts under roughly $60, that can land below the exchange's minimum order size, so Autopilot rounds a positive-edge trade up to the minimum instead of skipping it, never past your own max-size-per-trade guardrail. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it.",
-    eli5: "A dial from 'just tell me' to 'do it for me', with a big red stop button you control.",
+    what: "You choose how much the Coach may do for you: Observe (it only watches), Advise (it suggests), Approve (it prepares actions you tap to approve) and Autopilot (it acts inside the limits you set). Guardrails cap trade size, daily count, minimum conviction and drawdown, plus a kill switch that stops everything instantly. The drawdown guardrail only ever blocks new buys — it never blocks Autopilot's own protective exits or trims, so a bad stretch can't trap you in a losing position. Paper mode lets you run it with no real money. Beyond your guardrails, Autopilot also watches Exit Intelligence on positions you hold: elevated exit pressure alone can trigger a partial trim, and a high exit-pressure reading can trigger a full exit — rotating the position to your stable symbol — even if nothing else about the position looks wrong yet. A trim (not a full exit) is lightened to a smaller hedge instead of the standard cut when the coin still scores High Conviction on its own recommendation read at the same time — real risk still gets acted on, just less aggressively when the platform's own broader read still likes the position. A full exit is never softened this way, on purpose — that's the one signal meant to override everything else. The most urgent case (High Exit Pressure) is checked every minute, not just every 5 minutes, so a fast-forming exit signal doesn't sit unacted-on. Buy sizing also gets measured-edge Kelly sizing, capped at 10% of your portfolio regardless of edge strength — on accounts under roughly $60, that can land below the exchange's minimum order size, so Autopilot rounds a positive-edge trade up to the minimum instead of skipping it, never past your own max-size-per-trade guardrail. Live execution needs a trading-enabled Bybit, OKX or MEXC connection — Binance can't be used for Autopilot execution since it requires a whitelisted IP for trading keys and EliteFlux has no fixed outbound IP to give it. A separate Trading style setting (Short-term, Balanced or Long-term) controls a different behavior: reallocating out of a position that's simply gone quiet or lagged the market, with nothing dangerous about it — something the risk-driven exits above never do on their own. Short-term checks sooner and reacts to a smaller gap; Long-term waits much longer and needs a bigger, more sustained one. This only ever touches the portion of a position Autopilot itself bought — any pre-existing amount of that coin you already held is never sold this way — and it only reduces a position (never a full exit), leaving the freed balance to be redeployed into whatever currently looks best on the next cycle.",
+    eli5: "A dial from 'just tell me' to 'do it for me', with a big red stop button you control. A separate setting decides how patient it is before moving your money out of something that's gone quiet toward something stronger.",
     plan: "elite",
-    keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve"],
+    keywords: ["autopilot", "autonomy", "automation", "guardrails", "kill switch", "paper mode", "approve", "trading style", "rotation", "reallocate", "long term", "short term"],
   },
   {
     key: "token-discovery",
@@ -467,12 +467,13 @@ export const HOW_TO: HowToDoc[] = [
     steps: [
       "Open /autopilot and read the disclosure, then choose your level: Observe, Advise, Approve or Autopilot.",
       "Set your guardrails: maximum size per trade, maximum trades per 24h, maximum spend per 24h, minimum conviction and cooldown.",
+      "Pick a Trading style — Short-term, Balanced or Long-term — to control how quickly it reallocates out of a position that's gone quiet or lagged, separate from the risk-driven guardrails above.",
       "Leave Paper mode on to watch it work with no real money until you trust it.",
       "Arm it. Nothing runs until it is armed.",
       "Use the kill switch at any time to stop everything immediately.",
     ],
-    eli5: "You decide how much the helper may do, write down the limits, and keep a big stop button in your hand.",
-    keywords: ["autopilot", "autonomy", "arm", "guardrail", "kill switch", "paper"],
+    eli5: "You decide how much the helper may do, write down the limits, pick how patient it is about moving on from a quiet position, and keep a big stop button in your hand.",
+    keywords: ["autopilot", "autonomy", "arm", "guardrail", "kill switch", "paper", "trading style"],
   },
   {
     key: "approve-action",
@@ -609,6 +610,8 @@ export const GLOSSARY: GlossaryDoc[] = [
   { term: "Community trust", eli5: "What EliteFlux's own users think of a pick, based on their thumbs up / thumbs down ratings." },
   { term: "Crowd positioning", eli5: "What EliteFlux's own users are actually doing with a coin — accumulating, reducing, watching or avoiding — based on their logged journal calls, not ratings." },
   { term: "Concentration risk", eli5: "Having too much of your portfolio riding on a single asset." },
+  { term: "Trading style", eli5: "Your Autopilot setting for how patient it is before giving up on a quiet position and moving the money elsewhere — Short-term, Balanced or Long-term." },
+  { term: "Rotation", eli5: "Autopilot reducing a position that's gone quiet or lagged the market, so the money can be redeployed into something that currently looks stronger. Different from a protective exit — nothing about the position has to look dangerous for this to happen." },
   { term: "Liquidity lock", eli5: "A promise, checked on-chain, that the trading pool backing a token can't be pulled out by its creator for some time. An unlocked pool is one way a rug pull happens." },
   { term: "Honeypot", eli5: "A token built so you can buy it but can't sell it. The price looks great right up until you try to get out." },
   { term: "Mint authority", eli5: "On Solana, whoever holds this can create more of a token out of thin air at will. Revoked means nobody can anymore." },
@@ -621,6 +624,12 @@ export const GLOSSARY: GlossaryDoc[] = [
 // ---------------------------------------------------------------------------
 
 export const CHANGELOG: ChangeDoc[] = [
+  {
+    date: "2026-10-06",
+    title: "New: Autopilot can now reallocate out of a position that's gone quiet",
+    detail:
+      "Until now, the only way Autopilot ever sold a position was a risk signal — elevated exit pressure or an unstable stance. A coin that was simply unexciting, neither dangerous nor interesting, sat there indefinitely, no matter what else looked better. Autopilot now also reduces a held position when it's gone quiet (no longer scoring High Conviction, while something else that IS currently scores meaningfully higher) or has lagged the broader market over a stretch of time with no sign of improving. A new Trading style setting (Short-term, Balanced or Long-term) controls how quickly and on how large a gap this happens — Short-term reacts sooner to a smaller gap, Long-term waits much longer for a bigger, more sustained one. This only ever reduces, never a full exit, and only ever touches the dollar amount Autopilot itself originally put into that position — any amount of that coin you already held beforehand is never sold this way. The freed balance isn't immediately spent; it's picked up by Autopilot's normal buy logic on a later cycle, same as after any other sell.",
+  },
   {
     date: "2026-10-06",
     title: "New: Token Discovery — paper-mode screening of brand-new, unlisted tokens",

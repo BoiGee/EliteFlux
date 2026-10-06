@@ -333,6 +333,7 @@ export type Database = {
           paper_mode: boolean
           peak_portfolio_usd: number | null
           stable_symbol: string
+          trading_style: string
           updated_at: string
           user_id: string
         }
@@ -356,6 +357,7 @@ export type Database = {
           paper_mode?: boolean
           peak_portfolio_usd?: number | null
           stable_symbol?: string
+          trading_style?: string
           updated_at?: string
           user_id: string
         }
@@ -379,6 +381,7 @@ export type Database = {
           paper_mode?: boolean
           peak_portfolio_usd?: number | null
           stable_symbol?: string
+          trading_style?: string
           updated_at?: string
           user_id?: string
         }

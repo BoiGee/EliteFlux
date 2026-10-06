@@ -43,6 +43,7 @@ export const settingsSchema = z.object({
   allowed_symbols: symbolList.optional(),
   blocked_symbols: symbolList.optional(),
   stable_symbol: z.enum(["USDT", "USDC"]).optional(),
+  trading_style: z.enum(["short_term", "balanced", "long_term"]).optional(),
 });
 
 export const armSchema = z.object({

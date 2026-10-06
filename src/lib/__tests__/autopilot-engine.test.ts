@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   checkGuardrails,
+  computeOwnedBasis,
   isStable,
   proposeActions,
+  proposeRotations,
   proposeUrgentExits,
+  ROTATION_PARAMS,
   type Candidate,
   type PortfolioView,
 } from "../autopilot-engine";
@@ -22,6 +25,7 @@ const guardrails: Guardrails = {
   allowed_symbols: [],
   blocked_symbols: [],
   stable_symbol: "USDT",
+  trading_style: DEFAULT_SETTINGS.trading_style,
 };
 
 const portfolio: PortfolioView = {
@@ -456,5 +460,151 @@ describe("checkGuardrails", () => {
     const usage = { trades: 0, notionalUsd: guardrails.max_daily_usd };
     const v = checkGuardrails(candidate({}), guardrails, portfolio, usage, null, null);
     expect(v.passed).toBe(false);
+  });
+});
+
+const DAY_MS = 24 * 3600_000;
+
+describe("computeOwnedBasis", () => {
+  it("accumulates buys and subtracts trims within the same open position", () => {
+    const basis = computeOwnedBasis([
+      { kind: "buy", symbol: "eth", notionalUsd: 100, executedAt: 1000 },
+      { kind: "trim", symbol: "eth", notionalUsd: 30, executedAt: 2000 },
+    ]);
+    expect(basis.ETH).toEqual({ openedAt: 1000, ownedUsd: 70 });
+  });
+
+  it("a full exit zeroes the basis, and a later buy starts a fresh openedAt", () => {
+    const basis = computeOwnedBasis([
+      { kind: "buy", symbol: "ETH", notionalUsd: 100, executedAt: 1000 },
+      { kind: "exit", symbol: "ETH", notionalUsd: 100, executedAt: 2000 },
+      { kind: "buy", symbol: "ETH", notionalUsd: 50, executedAt: 3000 },
+    ]);
+    expect(basis.ETH).toEqual({ openedAt: 3000, ownedUsd: 50 });
+  });
+
+  it("omits a symbol with no net ownership (fully trimmed/exited, nothing re-bought)", () => {
+    const basis = computeOwnedBasis([
+      { kind: "buy", symbol: "SOL", notionalUsd: 100, executedAt: 1000 },
+      { kind: "exit", symbol: "SOL", notionalUsd: 100, executedAt: 2000 },
+    ]);
+    expect(basis.SOL).toBeUndefined();
+  });
+
+  it("returns nothing for an empty row set", () => {
+    expect(computeOwnedBasis([])).toEqual({});
+  });
+});
+
+describe("proposeRotations", () => {
+  const style = "balanced" as const;
+  const params = ROTATION_PARAMS[style];
+  const now = 100 * DAY_MS;
+
+  const rotPortfolio: PortfolioView = {
+    totalUsd: 10000,
+    stableUsd: 2000,
+    positions: [{ symbol: "ETH", amount: 1, usdValue: 3000, weight: 30, pricingUnknown: false }],
+  };
+
+  const oldBasis = { ETH: { openedAt: now - (params.minDwellDays + 1) * DAY_MS, ownedUsd: 3000 } };
+  const goodAlt = opp({ symbol: "SUI", calibratedScore: 90, band: "High Conviction" });
+
+  it("blocks a position that hasn't been held long enough yet (dwell gate)", () => {
+    const freshBasis = { ETH: { openedAt: now - 1 * DAY_MS, ownedUsd: 3000 } };
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], freshBasis, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(0);
+  });
+
+  it("never rotates out of a position that still scores High Conviction, regardless of alternatives", () => {
+    const held = opp({ symbol: "ETH", calibratedScore: 95, band: "High Conviction" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], oldBasis, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(0);
+  });
+
+  it("requires the alternative to itself be High Conviction or Strong Early, not just a higher raw number", () => {
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const mediocreAlt = opp({ symbol: "SUI", calibratedScore: 55, band: "Neutral" });
+    const out = proposeRotations(rotPortfolio, [held, mediocreAlt], oldBasis, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(0);
+  });
+
+  it("fires the score trigger once the gap clears the style's threshold", () => {
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], oldBasis, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.kind).toBe("trim");
+    expect(out[0]!.symbol).toBe("ETH");
+    expect(out[0]!.rationale).toContain("SUI");
+  });
+
+  it("the underperformance trigger is relative, not absolute — a coin down less than the market must not fire", () => {
+    // ETH down 10% while BTC (the market baseline) is down 15% — ETH is
+    // relatively OUTPERFORMING despite a negative absolute return.
+    const out = proposeRotations(
+      rotPortfolio,
+      [],
+      oldBasis,
+      { ETH: -10 },
+      -15,
+      style,
+      new Set(),
+      now,
+    );
+    expect(out).toHaveLength(0);
+  });
+
+  it("the underperformance trigger fires once the coin lags the market baseline by enough", () => {
+    // ETH down 20% while BTC is down 2% — an 18pt relative lag, past balanced's 12pt gap.
+    const out = proposeRotations(rotPortfolio, [], oldBasis, { ETH: -20 }, -2, style, new Set(), now);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.rationale).toContain("lagged");
+  });
+
+  it("never proposes a position Autopilot didn't itself build (no owned basis)", () => {
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], {}, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(0);
+  });
+
+  it("respects excludeSymbols — a position proposeActions already flagged this cycle is skipped", () => {
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], oldBasis, {}, null, style, new Set(["ETH"]), now);
+    expect(out).toHaveLength(0);
+  });
+
+  it("SAFETY-CRITICAL: sizes the rotation to Autopilot's own reconstructed basis, never the full held position", () => {
+    // Position is worth $3000 total, but Autopilot itself only ever put in
+    // $200 of it (the rest is the user's own pre-existing stack) — the
+    // rotation must never touch more than the $200 Autopilot is actually
+    // responsible for.
+    const mixedBasis = { ETH: { openedAt: now - (params.minDwellDays + 1) * DAY_MS, ownedUsd: 200 } };
+    const held = opp({ symbol: "ETH", calibratedScore: 20, band: "Weak" });
+    const out = proposeRotations(rotPortfolio, [held, goodAlt], mixedBasis, {}, null, style, new Set(), now);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.notionalUsd).toBe(200);
+    expect(out[0]!.notionalUsd).toBeLessThan(rotPortfolio.positions[0]!.usdValue);
+  });
+
+  it("caps rotations at 2 per cycle, keeping the most severe", () => {
+    const manyPositions: PortfolioView = {
+      totalUsd: 10000,
+      stableUsd: 1000,
+      positions: [
+        { symbol: "ETH", amount: 1, usdValue: 1000, weight: 10, pricingUnknown: false },
+        { symbol: "ADA", amount: 1, usdValue: 1000, weight: 10, pricingUnknown: false },
+        { symbol: "DOT", amount: 1, usdValue: 1000, weight: 10, pricingUnknown: false },
+      ],
+    };
+    const manyBasis = {
+      ETH: { openedAt: now - (params.minDwellDays + 1) * DAY_MS, ownedUsd: 1000 },
+      ADA: { openedAt: now - (params.minDwellDays + 1) * DAY_MS, ownedUsd: 1000 },
+      DOT: { openedAt: now - (params.minDwellDays + 1) * DAY_MS, ownedUsd: 1000 },
+    };
+    const returns = { ETH: -20, ADA: -40, DOT: -30 }; // ADA worst, DOT next, ETH least severe
+    const out = proposeRotations(manyPositions, [], manyBasis, returns, -2, style, new Set(), now);
+    expect(out).toHaveLength(2);
+    expect(out.map((c) => c.symbol)).toEqual(["ADA", "DOT"]);
   });
 });

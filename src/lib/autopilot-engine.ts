@@ -1,7 +1,7 @@
 // Pure autopilot logic: turning intelligence into candidate actions and
 // checking them against a user's guardrails. No IO — easy to reason about
 // and identical for paper and live execution.
-import type { Guardrails } from "./autonomy";
+import type { Guardrails, TradingStyle } from "./autonomy";
 import type { ActionKind } from "./autonomy";
 import type { EliteOpportunity } from "./recommendation-engine";
 import type { ExitAssetSignal } from "./exit-intel";
@@ -303,4 +303,176 @@ export function checkGuardrails(
     checks,
     cappedNotional: Math.max(0, capped),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Position rotation: reallocating out of a position that's gone quiet or
+// lagged, into whatever currently looks better — the one thing
+// proposeActions above never does (it only ever sells on a RISK signal:
+// exit-pressure or an unstable stance). No existing rotation concept lived
+// anywhere in this codebase before this.
+// ---------------------------------------------------------------------------
+
+export type OwnedBasis = { openedAt: number; ownedUsd: number };
+
+/**
+ * Reconstructs, per symbol, how much of a position is Autopilot's OWN doing
+ * in dollar terms, and when that stretch of ownership began — from this
+ * user's own executed autopilot_actions rows only (buy/trim/exit, already
+ * filtered by the caller to source:"curated", excluding Token Discovery's
+ * paper rows which share this table).
+ *
+ * This is notional-dollars-in net of notional-dollars-out, NOT quantity/
+ * price lot accounting — the platform doesn't reliably have a confirmed
+ * per-fill price to do better (reference_price is proposal-time, not
+ * necessarily the real fill). Good enough to answer "roughly how much of
+ * this position did Autopilot itself put in," which is all rotation sizing
+ * needs: it must never sell more than that, regardless of how large the
+ * user's total held position actually is — a user who already owned some
+ * of a coin before Autopilot ever touched it must never have that
+ * pre-existing stack swept up in a rotation.
+ *
+ * A full exit zeroes a symbol's basis entirely (including openedAt) — a
+ * later buy of the same symbol starts a brand new position, not a
+ * resumption of one already closed out.
+ */
+export function computeOwnedBasis(
+  rows: { kind: ActionKind; symbol: string; notionalUsd: number; executedAt: number }[],
+): Record<string, OwnedBasis> {
+  const bySymbol = new Map<string, { kind: ActionKind; notionalUsd: number; executedAt: number }[]>();
+  for (const r of rows) {
+    const sym = r.symbol.toUpperCase();
+    (bySymbol.get(sym) ?? bySymbol.set(sym, []).get(sym)!).push(r);
+  }
+
+  const out: Record<string, OwnedBasis> = {};
+  for (const [sym, sorted] of bySymbol) {
+    sorted.sort((a, b) => a.executedAt - b.executedAt);
+    let ownedUsd = 0;
+    let openedAt: number | null = null;
+    for (const r of sorted) {
+      if (r.kind === "buy") {
+        if (ownedUsd <= 0) openedAt = r.executedAt;
+        ownedUsd += r.notionalUsd;
+      } else if (r.kind === "trim") {
+        ownedUsd = Math.max(0, ownedUsd - r.notionalUsd);
+      } else if (r.kind === "exit") {
+        ownedUsd = 0;
+        openedAt = null;
+      }
+    }
+    if (ownedUsd > 0 && openedAt !== null) out[sym] = { openedAt, ownedUsd };
+  }
+  return out;
+}
+
+/**
+ * How long to wait before rotating, and how big a gap is required, per the
+ * user's chosen trading_style. lookbackDays is capped at 14 — the retention
+ * window market_snapshots itself keeps (see market-history.server.ts).
+ */
+export const ROTATION_PARAMS: Record<
+  TradingStyle,
+  { minDwellDays: number; scoreGap: number; underperformGapPct: number; lookbackDays: number }
+> = {
+  short_term: { minDwellDays: 3, scoreGap: 20, underperformGapPct: 8, lookbackDays: 7 },
+  balanced: { minDwellDays: 7, scoreGap: 25, underperformGapPct: 12, lookbackDays: 10 },
+  long_term: { minDwellDays: 21, scoreGap: 35, underperformGapPct: 20, lookbackDays: 14 },
+};
+
+/** Lowest-priority signal of the three proposeActions/proposeRotations can produce — never crowds out a risk-driven exit or trim. */
+const MAX_ROTATIONS_PER_CYCLE = 2;
+
+const GOOD_BANDS = new Set<EliteOpportunity["band"]>(["High Conviction", "Strong Early"]);
+
+/**
+ * Proposes reducing a held, Autopilot-owned position when either: (a) it's
+ * gone quiet (no longer High Conviction) while a materially better, itself-
+ * good opportunity is available, or (b) it's relatively lagged the market
+ * baseline over the lookback window, regardless of whether it even has a
+ * live score at all (recommendation-engine's ranked universe only covers 20
+ * curated coins — a held coin outside that list has "no opinion," not
+ * "known bad," so the underperformance read is what covers it instead).
+ *
+ * Always a "trim" sized at min(ownedUsd, position's current usdValue) —
+ * never a full "exit": checkGuardrails already further-caps whatever
+ * notionalUsd this hands it against the per-trade/daily ceilings, so a
+ * rotation larger than one cycle's caps simply unwinds over a few cycles
+ * instead of all at once. There is deliberately no paired same-cycle buy —
+ * freeing stable balance lets proposeActions' own existing `accumulating`
+ * logic pick up the best opportunity next cycle, exactly like a risk-driven
+ * exit today doesn't synchronously trigger a replacement buy either.
+ */
+export function proposeRotations(
+  portfolio: PortfolioView,
+  opportunities: EliteOpportunity[],
+  basisBySymbol: Record<string, OwnedBasis>,
+  recentReturnBySymbol: Record<string, number | null>,
+  marketReturn: number | null,
+  style: TradingStyle,
+  excludeSymbols: Set<string>,
+  now: number,
+): Candidate[] {
+  const params = ROTATION_PARAMS[style];
+  const heldSymbols = new Set(portfolio.positions.map((p) => p.symbol.toUpperCase()));
+  const oppBySymbol = new Map(opportunities.map((o) => [o.symbol.toUpperCase(), o]));
+
+  const bestAlt = opportunities
+    .filter((o) => !heldSymbols.has(o.symbol.toUpperCase()) && !isStable(o.symbol) && GOOD_BANDS.has(o.band))
+    .sort((a, b) => b.calibratedScore - a.calibratedScore)[0];
+
+  type Scored = { candidate: Candidate; severity: number };
+  const out: Scored[] = [];
+
+  for (const pos of portfolio.positions) {
+    const sym = pos.symbol.toUpperCase();
+    if (isStable(sym) || pos.usdValue <= 0 || excludeSymbols.has(sym)) continue;
+    const basis = basisBySymbol[sym];
+    if (!basis || basis.ownedUsd <= 0) continue; // never rotate a position Autopilot didn't itself build
+
+    const dwellDays = (now - basis.openedAt) / (24 * 3600_000);
+    if (dwellDays < params.minDwellDays) continue;
+
+    const heldOpp = oppBySymbol.get(sym);
+    const scoreGapActual =
+      heldOpp && heldOpp.band !== "High Conviction" && bestAlt && bestAlt.symbol.toUpperCase() !== sym
+        ? bestAlt.calibratedScore - heldOpp.calibratedScore
+        : -Infinity;
+    const scoreTrigger = scoreGapActual >= params.scoreGap;
+
+    const ret = recentReturnBySymbol[sym] ?? null;
+    const underperformGapActual = ret !== null && marketReturn !== null ? marketReturn - ret : -Infinity;
+    const underperformTrigger = underperformGapActual >= params.underperformGapPct;
+
+    if (!scoreTrigger && !underperformTrigger) continue;
+
+    const notionalUsd = Math.min(basis.ownedUsd, pos.usdValue);
+    const severity = Math.max(scoreTrigger ? scoreGapActual : -Infinity, underperformTrigger ? underperformGapActual : -Infinity);
+
+    const rationale = scoreTrigger
+      ? `${sym} has gone quiet (scores ${Math.round(heldOpp!.calibratedScore)} now) while ${bestAlt!.symbol} is scoring ${Math.round(bestAlt!.calibratedScore)} (${bestAlt!.band}). Reducing this position to redeploy toward the stronger read.`
+      : `${sym} has lagged the market by ${underperformGapActual.toFixed(1)}pts over the last ${params.lookbackDays} days with no improving signal. Reducing this position to free capital for something stronger.`;
+
+    const conviction = scoreTrigger
+      ? Math.round(bestAlt!.calibratedScore)
+      : Math.round(Math.min(100, 50 + (underperformGapActual - params.underperformGapPct)));
+
+    out.push({
+      severity,
+      candidate: {
+        kind: "trim",
+        symbol: sym,
+        conviction,
+        notionalUsd,
+        sizePct: pos.usdValue > 0 ? (notionalUsd / pos.usdValue) * 100 : 0,
+        referencePrice: pos.amount > 0 ? pos.usdValue / pos.amount : 0,
+        rationale,
+      },
+    });
+  }
+
+  return out
+    .sort((a, b) => b.severity - a.severity)
+    .slice(0, MAX_ROTATIONS_PER_CYCLE)
+    .map((s) => s.candidate);
 }

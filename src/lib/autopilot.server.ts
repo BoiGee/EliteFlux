@@ -7,13 +7,16 @@ import { loadPortfolioView, syncPortfolio } from "./portfolio.server";
 import {
   checkGuardrails,
   proposeActions,
+  proposeRotations,
   proposeUrgentExits,
+  computeOwnedBasis,
+  ROTATION_PARAMS,
   MIN_ORDER_USD,
   type Candidate,
   type DayUsage,
   type PortfolioView,
 } from "./autopilot-engine";
-import { DEFAULT_SETTINGS, type AutopilotSettings, type Guardrails } from "./autonomy";
+import { DEFAULT_SETTINGS, type AutopilotSettings, type Guardrails, type TradingStyle } from "./autonomy";
 import type { EliteOpportunity } from "./recommendation-engine";
 import type { ExitAssetSignal } from "./exit-intel";
 import { computeSuggestedSizing, MAX_SUGGESTED_SIZE_PCT } from "./kelly-sizing.server";
@@ -102,6 +105,37 @@ async function hoursSinceLastTrade(db: DB, userId: string, symbol: string): Prom
     .maybeSingle();
   const at = (data as { executed_at: string | null } | null)?.executed_at;
   return at ? (Date.now() - new Date(at).getTime()) / 3600_000 : null;
+}
+
+/**
+ * This user's own executed (or reconciled-unknown, same as every other
+ * guardrail count — see COUNTS_AS_EXECUTED) curated-universe buy/trim/exit
+ * rows, feeding autopilot-engine.ts's computeOwnedBasis. Explicitly
+ * source:"curated" — Token Discovery's paper positions share this table
+ * under source:"discovery" and must never be folded into Autopilot's own
+ * rotation basis.
+ */
+async function loadOwnAutopilotActions(
+  db: DB,
+  userId: string,
+): Promise<{ kind: "buy" | "trim" | "exit" | "hold"; symbol: string; notionalUsd: number; executedAt: number }[]> {
+  const { data } = await db
+    .from("autopilot_actions")
+    .select("kind,symbol,notional_usd,executed_at")
+    .eq("user_id", userId)
+    .eq("source", "curated")
+    .in("state", COUNTS_AS_EXECUTED)
+    .in("kind", ["buy", "trim", "exit"])
+    .order("executed_at", { ascending: true })
+    .limit(500);
+  return ((data ?? []) as { kind: "buy" | "trim" | "exit"; symbol: string; notional_usd: number | null; executed_at: string | null }[])
+    .filter((r) => r.executed_at)
+    .map((r) => ({
+      kind: r.kind,
+      symbol: r.symbol,
+      notionalUsd: Number(r.notional_usd) || 0,
+      executedAt: new Date(r.executed_at!).getTime(),
+    }));
 }
 
 /** Live venue for a user, if they connected one with trade permission. */
@@ -601,6 +635,38 @@ export async function runAutopilotForUser(
   const proposed = fastExitOnly
     ? proposeUrgentExits(portfolio, exitPerAsset, settings as Guardrails)
     : proposeActions(opportunities, portfolio, settings as Guardrails, exitPerAsset).slice(0, 5);
+
+  // Position rotation — reallocating out of a held position that's gone
+  // quiet or lagged, something proposeActions above never does on its own
+  // (it only ever sells on a risk signal). Same cadence-skip reasoning as
+  // proposeActions itself: this is a 5-minute-cycle concept, not something
+  // the 1-minute urgent-exit pass should also pay for.
+  if (!fastExitOnly) {
+    try {
+      const style = ((settings as Guardrails).trading_style ?? "balanced") as TradingStyle;
+      const { loadRecentReturns } = await import("./market-history.server");
+      const [ownActions, { bySymbol: recentReturns, marketReturn }] = await Promise.all([
+        loadOwnAutopilotActions(db, userId),
+        loadRecentReturns(portfolio.positions.map((p) => p.symbol), ROTATION_PARAMS[style].lookbackDays),
+      ]);
+      const basisBySymbol = computeOwnedBasis(ownActions);
+      const excludeSymbols = new Set(proposed.filter((c) => c.kind !== "buy").map((c) => c.symbol.toUpperCase()));
+      const rotations = proposeRotations(
+        portfolio,
+        opportunities,
+        basisBySymbol,
+        recentReturns,
+        marketReturn,
+        style,
+        excludeSymbols,
+        Date.now(),
+      );
+      proposed.push(...rotations);
+    } catch (e) {
+      console.error("position rotation check failed", userId, e);
+    }
+  }
+
   const candidates = await applyKellySizing(db, userId, portfolio, regime, proposed);
   for (const c of candidates) {
     const recorded = await recordCandidate(db, userId, c, settings, portfolio);

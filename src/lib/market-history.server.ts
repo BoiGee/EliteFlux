@@ -136,3 +136,67 @@ export async function persistSnapshot(
     /* history is best-effort — never break alert evaluation */
   }
 }
+
+/**
+ * How each symbol's price has moved over the last `lookbackDays`, plus the
+ * same figure for a market-baseline proxy (BTC by default — the same
+ * marketProxySymbol convention signal-tracking.server.ts already uses) —
+ * autopilot-engine.ts's position-rotation logic reads this to tell "this
+ * coin specifically has lagged" apart from "the whole market is down."
+ * `lookbackDays` beyond market_snapshots' own retention window (currently
+ * 14 days — see jobs.server.ts's retention-cleanup job) will simply find no
+ * row that far back and return nulls, same as any other resolution failure.
+ * Fails closed throughout: a symbol/baseline that can't be resolved from two
+ * real snapshots comes back `null`, never a guess.
+ */
+export async function loadRecentReturns(
+  symbols: string[],
+  lookbackDays: number,
+  marketProxySymbol = "BTC",
+): Promise<{ bySymbol: Record<string, number | null>; marketReturn: number | null }> {
+  const bySymbol: Record<string, number | null> = {};
+  for (const s of symbols) bySymbol[s.toUpperCase()] = null;
+
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const admin = supabaseAdmin as unknown as Admin;
+
+    const { data: latestRows } = await admin
+      .from("market_snapshots")
+      .select("captured_at,coins")
+      .order("captured_at", { ascending: false })
+      .limit(1);
+    const latest = (latestRows ?? [])[0] as { captured_at: string; coins: Record<string, CoinCapture> } | undefined;
+    if (!latest) return { bySymbol, marketReturn: null };
+
+    const cutoffIso = new Date(Date.now() - lookbackDays * 24 * 3600_000).toISOString();
+    const { data: pastRows } = await admin
+      .from("market_snapshots")
+      .select("captured_at,coins")
+      .lte("captured_at", cutoffIso)
+      .order("captured_at", { ascending: false })
+      .limit(1);
+    const past = (pastRows ?? [])[0] as { captured_at: string; coins: Record<string, CoinCapture> } | undefined;
+    if (!past) return { bySymbol, marketReturn: null };
+
+    const pctChange = (sym: string): number | null => {
+      const curP = latest.coins?.[sym]?.price;
+      const pastP = past.coins?.[sym]?.price;
+      if (
+        typeof curP !== "number" ||
+        typeof pastP !== "number" ||
+        !Number.isFinite(curP) ||
+        !Number.isFinite(pastP) ||
+        pastP === 0
+      ) {
+        return null;
+      }
+      return ((curP - pastP) / pastP) * 100;
+    };
+
+    for (const s of symbols) bySymbol[s.toUpperCase()] = pctChange(s.toUpperCase());
+    return { bySymbol, marketReturn: pctChange(marketProxySymbol.toUpperCase()) };
+  } catch {
+    return { bySymbol, marketReturn: null };
+  }
+}

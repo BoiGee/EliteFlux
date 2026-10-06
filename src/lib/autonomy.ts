@@ -38,6 +38,27 @@ export const AUTONOMY_LEVELS: {
 export const levelIndex = (l: AutonomyLevel) =>
   AUTONOMY_LEVELS.find((x) => x.key === l)?.index ?? 0;
 
+/** How patient autopilot-engine.ts's position-rotation logic should be before reallocating out of a quiet/lagging holding. See ROTATION_PARAMS. */
+export type TradingStyle = "short_term" | "balanced" | "long_term";
+
+export const TRADING_STYLES: { key: TradingStyle; name: string; blurb: string }[] = [
+  {
+    key: "short_term",
+    name: "Short-term",
+    blurb: "Rotates into a clearly better opportunity quickly. Tolerates more churn.",
+  },
+  {
+    key: "balanced",
+    name: "Balanced",
+    blurb: "A reasonable middle ground between patience and speed.",
+  },
+  {
+    key: "long_term",
+    name: "Long-term",
+    blurb: "Patient — holds through volatility, only rotates on a large, sustained gap.",
+  },
+];
+
 export type Guardrails = {
   max_trade_pct: number;
   max_trade_usd: number;
@@ -49,6 +70,7 @@ export type Guardrails = {
   allowed_symbols: string[];
   blocked_symbols: string[];
   stable_symbol: string;
+  trading_style: TradingStyle;
 };
 
 export type AutopilotSettings = Guardrails & {
@@ -84,6 +106,7 @@ export const DEFAULT_SETTINGS: Guardrails & {
   allowed_symbols: [],
   blocked_symbols: [],
   stable_symbol: "USDT",
+  trading_style: "balanced",
 };
 
 export const GUARDRAIL_BOUNDS = {
